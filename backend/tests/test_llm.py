@@ -237,3 +237,75 @@ async def test_openai_generate_stream():
             messages=[{"role": "user", "content": "stream test"}],
             stream=True
         )
+
+
+@pytest.mark.asyncio
+async def test_gemini_health_check_validation_success():
+    provider = GeminiProvider(api_key="test_key")
+    
+    mock_model1 = MagicMock()
+    mock_model1.name = "models/gemini-2.5-pro"
+    
+    with patch("google.generativeai.list_models", return_value=[mock_model1]), \
+         patch("google.generativeai.GenerativeModel.generate_content_async", new_callable=AsyncMock) as mock_gen, \
+         patch("app.core.config.settings.GEMINI_MODEL", "gemini-2.5-pro"):
+        
+        mock_gen.return_value = MagicMock()
+        result = await provider.health_check()
+        assert result is True
+
+
+@pytest.mark.asyncio
+async def test_gemini_health_check_validation_failure():
+    provider = GeminiProvider(api_key="test_key")
+    
+    mock_model1 = MagicMock()
+    mock_model1.name = "models/gemini-2.5-flash"
+    
+    with patch("google.generativeai.list_models", return_value=[mock_model1]), \
+         patch("app.core.config.settings.GEMINI_MODEL", "gemini-2.5-pro"):
+        
+        with pytest.raises(LLMUnsupportedModelException) as excinfo:
+            await provider.health_check()
+        assert "is not found or unsupported by the current API/SDK version" in str(excinfo.value)
+        assert "gemini-2.5-flash" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_health_check_validation_success():
+    provider = OpenAIProvider(api_key="test_key")
+    
+    mock_model1 = MagicMock()
+    mock_model1.id = "gpt-4o"
+    mock_models_list = MagicMock()
+    mock_models_list.data = [mock_model1]
+    
+    with patch.object(provider.client.models, "list", new_callable=AsyncMock) as mock_list, \
+         patch.object(provider.client.chat.completions, "create", new_callable=AsyncMock) as mock_create, \
+         patch("app.core.config.settings.OPENAI_MODEL", "gpt-4o"):
+        
+        mock_list.return_value = mock_models_list
+        mock_create.return_value = MagicMock()
+        
+        result = await provider.health_check()
+        assert result is True
+
+
+@pytest.mark.asyncio
+async def test_openai_health_check_validation_failure():
+    provider = OpenAIProvider(api_key="test_key")
+    
+    mock_model1 = MagicMock()
+    mock_model1.id = "gpt-3.5-turbo"
+    mock_models_list = MagicMock()
+    mock_models_list.data = [mock_model1]
+    
+    with patch.object(provider.client.models, "list", new_callable=AsyncMock) as mock_list, \
+         patch("app.core.config.settings.OPENAI_MODEL", "gpt-4o"):
+        
+        mock_list.return_value = mock_models_list
+        
+        with pytest.raises(LLMUnsupportedModelException) as excinfo:
+            await provider.health_check()
+        assert "is not found or unsupported" in str(excinfo.value)
+        assert "gpt-3.5-turbo" in str(excinfo.value)

@@ -20,6 +20,8 @@ def translate_exceptions(func):
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
+        except LLMException:
+            raise
         except openai.AuthenticationError as e:
             raise LLMAuthenticationException("OpenAI API key is invalid or unauthorized.", e) from e
         except openai.RateLimitError as e:
@@ -44,6 +46,8 @@ def translate_exceptions_stream(func):
         try:
             async for chunk in func(*args, **kwargs):
                 yield chunk
+        except LLMException:
+            raise
         except openai.AuthenticationError as e:
             raise LLMAuthenticationException("OpenAI API key is invalid or unauthorized.", e) from e
         except openai.RateLimitError as e:
@@ -70,8 +74,9 @@ class OpenAIProvider(BaseLLMProvider):
     ]
 
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key
-        self.client = AsyncOpenAI(api_key=api_key) if api_key else None
+        from app.core.config import settings
+        self.api_key = api_key or settings.OPENAI_API_KEY
+        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
 
     def list_models(self) -> List[str]:
         return self.SUPPORTED_MODELS
@@ -81,9 +86,24 @@ class OpenAIProvider(BaseLLMProvider):
         if not self.api_key or not self.client:
             return False
 
+        from app.core.config import settings
+        config_model = settings.OPENAI_MODEL
+        
+        try:
+            models_response = await self.client.models.list()
+            available_names = [m.id for m in models_response.data]
+        except Exception:
+            raise
+            
+        if config_model not in available_names:
+            raise LLMUnsupportedModelException(
+                f"Configured OpenAI model '{config_model}' is not found or unsupported. "
+                f"Available models: {', '.join(available_names)}"
+            )
+
         # Run query with max_tokens=1 for fast validation
         response = await self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=config_model,
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=1
         )
@@ -93,7 +113,8 @@ class OpenAIProvider(BaseLLMProvider):
     async def generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         if not self.client:
             raise LLMAuthenticationException("OpenAI provider API key is not configured.")
-        if request.model not in self.SUPPORTED_MODELS:
+        from app.core.config import settings
+        if request.model not in self.SUPPORTED_MODELS and request.model != settings.OPENAI_MODEL:
             raise LLMUnsupportedModelException(f"Model '{request.model}' is not supported by OpenAI.")
 
         # Map chat history
@@ -132,7 +153,8 @@ class OpenAIProvider(BaseLLMProvider):
     async def generate_stream(self, request: ChatCompletionRequest) -> AsyncGenerator[str, None]:
         if not self.client:
             raise LLMAuthenticationException("OpenAI provider API key is not configured.")
-        if request.model not in self.SUPPORTED_MODELS:
+        from app.core.config import settings
+        if request.model not in self.SUPPORTED_MODELS and request.model != settings.OPENAI_MODEL:
             raise LLMUnsupportedModelException(f"Model '{request.model}' is not supported by OpenAI.")
 
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]

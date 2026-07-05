@@ -30,8 +30,8 @@ def get_providers_info():
     """
     Returns configured providers and their available models.
     """
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
+    gemini_key = settings.GEMINI_API_KEY
+    openai_key = settings.OPENAI_API_KEY
     
     from app.llm.providers.gemini import GeminiProvider
     from app.llm.providers.openai import OpenAIProvider
@@ -57,7 +57,7 @@ async def check_providers_health():
     results = []
     
     # Check Gemini
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    gemini_key = settings.GEMINI_API_KEY
     if gemini_key:
         try:
             prov = ProviderFactory.get_provider("gemini")
@@ -86,7 +86,7 @@ async def check_providers_health():
         )
         
     # Check OpenAI
-    openai_key = os.getenv("OPENAI_API_KEY")
+    openai_key = settings.OPENAI_API_KEY
     if openai_key:
         try:
             prov = ProviderFactory.get_provider("openai")

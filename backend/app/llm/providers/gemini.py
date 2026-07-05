@@ -28,6 +28,8 @@ def translate_exceptions(func):
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
+        except LLMException:
+            raise
         except (PermissionDenied, Unauthenticated) as e:
             raise LLMAuthenticationException("Gemini API key is invalid or unauthenticated.", e) from e
         except ResourceExhausted as e:
@@ -53,6 +55,8 @@ def translate_exceptions_stream(func):
         try:
             async for chunk in func(*args, **kwargs):
                 yield chunk
+        except LLMException:
+            raise
         except (PermissionDenied, Unauthenticated) as e:
             raise LLMAuthenticationException("Gemini API key is invalid or unauthenticated.", e) from e
         except ResourceExhausted as e:
@@ -74,13 +78,18 @@ def translate_exceptions_stream(func):
 
 class GeminiProvider(BaseLLMProvider):
     SUPPORTED_MODELS = [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-3.5-flash",
         "gemini-1.5-pro",
         "gemini-1.5-flash",
         "gemini-1.0-pro"
     ]
 
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key
+        from app.core.config import settings
+        self.api_key = api_key or settings.GEMINI_API_KEY
         if self.api_key:
             genai.configure(api_key=self.api_key)
 
@@ -92,8 +101,27 @@ class GeminiProvider(BaseLLMProvider):
         if not self.api_key:
             return False
         
-        # Query smallest model to execute health check quickly
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # 1. Fetch models list to validate configured model
+        try:
+            available_models = list(genai.list_models())
+        except Exception:
+            raise
+            
+        from app.core.config import settings
+        config_model = settings.GEMINI_MODEL
+        config_model_clean = config_model.replace("models/", "")
+        
+        available_names = [m.name for m in available_models]
+        available_names_clean = [name.replace("models/", "") for name in available_names]
+        
+        if config_model_clean not in available_names_clean:
+            raise LLMUnsupportedModelException(
+                f"Configured Gemini model '{config_model}' is not found or unsupported by the current API/SDK version. "
+                f"Available compatible models: {', '.join(available_names_clean)}"
+            )
+            
+        # 2. Run a fast query on the validated model to verify it responds
+        model = genai.GenerativeModel(config_model_clean)
         response = await model.generate_content_async(
             "ping",
             generation_config={"max_output_tokens": 1}
@@ -103,7 +131,8 @@ class GeminiProvider(BaseLLMProvider):
 
     @translate_exceptions
     async def generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
-        if request.model not in self.SUPPORTED_MODELS:
+        from app.core.config import settings
+        if request.model not in self.SUPPORTED_MODELS and request.model != settings.GEMINI_MODEL:
             raise LLMUnsupportedModelException(f"Model '{request.model}' is not supported by Gemini.")
 
         # Extract system prompt
@@ -150,7 +179,8 @@ class GeminiProvider(BaseLLMProvider):
 
     @translate_exceptions_stream
     async def generate_stream(self, request: ChatCompletionRequest) -> AsyncGenerator[str, None]:
-        if request.model not in self.SUPPORTED_MODELS:
+        from app.core.config import settings
+        if request.model not in self.SUPPORTED_MODELS and request.model != settings.GEMINI_MODEL:
             raise LLMUnsupportedModelException(f"Model '{request.model}' is not supported by Gemini.")
 
         # Extract system prompt

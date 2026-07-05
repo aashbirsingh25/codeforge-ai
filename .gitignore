@@ -1,37 +1,21 @@
-# =========================
 # Python
-# =========================
-venv/
 __pycache__/
-*.py[cod]
+*.pyc
 .pytest_cache/
+.coverage
+.coverage.*
 
-# =========================
-# Node.js
-# =========================
-node_modules/
-dist/
+# Coverage
+backend/.coverage
 
-# =========================
+# Virtual Environments
+venv/
+backend/venv/
+
 # Environment Variables
-# =========================
 .env
-.env.*
+backend/.env
 
-# =========================
-# Logs
-# =========================
-logs/
-*.log
-
-# =========================
-# IDE
-# =========================
-.vscode/
-.idea/
-
-# =========================
-# OS Files
-# =========================
-.DS_Store
-Thumbs.db
+# Node
+node_modules/
+frontend/node_modules/
