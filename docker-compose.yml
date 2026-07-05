@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  codeforge-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: codeforge_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspace:/app/workspace
+    env_file:
+      - .env
+    environment:
+      - WORKSPACE_DIR=/app/workspace
+
+  codeforge-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: codeforge_frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - codeforge-backend
