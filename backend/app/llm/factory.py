@@ -11,6 +11,11 @@ class ProviderFactory:
     @staticmethod
     def get_provider(provider_name: str) -> BaseLLMProvider:
         name = provider_name.lower().strip()
+        try:
+            from app.core.metrics import metrics_tracker
+            metrics_tracker.track_provider(name)
+        except Exception:
+            pass
         if name == "gemini":
             return GeminiProvider()
         elif name == "openai":

@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     AGENT_TIMEOUT: float = 120.0
     AGENT_RECURSION_LIMIT: int = 3
 
+    # Rate Limiting Configuration
+    RATE_LIMIT_CALLS: int = 100
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+
 
     def __getattribute__(self, name):
         """Allows config values to be loaded dynamically from the environment.

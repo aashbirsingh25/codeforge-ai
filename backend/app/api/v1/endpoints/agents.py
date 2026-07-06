@@ -1,5 +1,8 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
+import json
+import asyncio
 
 from app.agents.schemas import ExecutionRequest, ExecutionResponse, ReActTrace
 from app.agents.service import execution_service, AgentExecutionService
@@ -131,4 +134,50 @@ def get_execution_trace(
             detail=f"No trace found for execution ID '{execution_id}'."
         )
     return response.react_trace
+
+@router.get("/{execution_id}/events", summary="Get execution tracing events", description="Returns a Server-Sent Events stream delivering agent ReAct reasoning steps, thoughts, tool calls, and observations.")
+async def get_execution_events(
+    execution_id: str,
+    service: AgentExecutionService = Depends(get_execution_service)
+):
+    response = service.get_status(execution_id)
+    if not response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution with ID '{execution_id}' not found."
+        )
+
+    from app.core.events import event_publisher
+
+    async def sse_generator():
+        # Yield history first
+        history = event_publisher.get_history(execution_id)
+        for event in history:
+            yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+
+        # Subscribe and yield new events
+        queue = event_publisher.subscribe(execution_id)
+        try:
+            while True:
+                event = await queue.get()
+                yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            event_publisher.unsubscribe(execution_id, queue)
+
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
+
+@router.post("/{execution_id}/cancel", status_code=status.HTTP_200_OK, summary="Cancel a running execution", description="Commands a graceful cancellation request for the active agent execution asyncio task, finalizing metrics states.")
+def cancel_execution(
+    execution_id: str,
+    service: AgentExecutionService = Depends(get_execution_service)
+):
+    success = service.cancel_execution(execution_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution with ID '{execution_id}' not found or is not running."
+        )
+    return {"message": f"Cancellation request for execution '{execution_id}' submitted."}
 

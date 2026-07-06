@@ -1,6 +1,6 @@
 import logging
 import logging.config
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 LOGGING_CONFIG: Dict[str, Any] = {
     "version": 1,
@@ -43,3 +43,36 @@ LOGGING_CONFIG: Dict[str, Any] = {
 
 def setup_logging() -> None:
     logging.config.dictConfig(LOGGING_CONFIG)
+
+structured_logger = logging.getLogger("app.structured")
+
+def log_structured_event(
+    event: str,
+    request_id: Optional[str] = None,
+    execution_id: Optional[str] = None,
+    provider: Optional[str] = None,
+    tool: Optional[str] = None,
+    duration: Optional[float] = None,
+    status: Optional[str] = None,
+    extra: Optional[Dict[str, Any]] = None
+) -> None:
+    """
+    Utility logger generating structured log trace strings for parsers.
+    """
+    parts = [f"event={event}"]
+    if request_id:
+        parts.append(f"request_id={request_id}")
+    if execution_id:
+        parts.append(f"execution_id={execution_id}")
+    if provider:
+        parts.append(f"provider={provider}")
+    if tool:
+        parts.append(f"tool={tool}")
+    if duration is not None:
+        parts.append(f"duration={duration:.4f}s")
+    if status:
+        parts.append(f"status={status}")
+    if extra:
+        for k, v in extra.items():
+            parts.append(f"{k}={v}")
+    structured_logger.info(" | ".join(parts))

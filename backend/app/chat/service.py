@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncGenerator
 from datetime import datetime, timezone
 
 from app.llm.factory import ProviderFactory
@@ -158,3 +158,103 @@ class ChatService:
             provider=provider_name,
             duration_seconds=duration
         )
+
+    async def send_message_stream(self, user_message: str) -> AsyncGenerator[str, None]:
+        # 1. Save user message to memory
+        try:
+            self.manager.save_conversation(
+                conversation_id="default",
+                message=user_message,
+                role="user"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save user message to memory: {e}")
+
+        # 2. Retrieve relevant context blocks using Memory Engine search queries
+        context_blocks = []
+        try:
+            plans = self.manager.retrieve_similar(query=user_message, limit=2, category="plan")
+            if plans:
+                context_blocks.append("--- RELEVANT PLANNING HISTORY ---")
+                for p in plans:
+                    context_blocks.append(f"Plan Goal: '{p.metadata.get('goal')}'\nPlan Content: {p.content}")
+            executions = self.manager.retrieve_similar(query=user_message, limit=2, category="execution")
+            if executions:
+                context_blocks.append("--- RECENT EXECUTION HISTORY ---")
+                for ex in executions:
+                    context_blocks.append(f"Execution: {ex.content}")
+            tools = self.manager.retrieve_similar(query=user_message, limit=3, category="tool_output")
+            if tools:
+                context_blocks.append("--- RELEVANT TOOL EXECUTION HISTORY ---")
+                for t in tools:
+                    context_blocks.append(f"Tool {t.metadata.get('tool_name')}: {t.content}")
+        except Exception as e:
+            logger.warning(f"Failed to retrieve context from Memory Engine: {e}")
+
+        # 3. Retrieve recent conversation message history
+        history_messages = await self.get_chat_history(limit=10)
+        
+        # Build prompt context blocks
+        context_str = "\n\n".join(context_blocks)
+        system_instruction = (
+            "You are a helpful Software Engineering Assistant in the CodeForge AI platform.\n"
+            "Answer the user's questions clearly, concisely, and correctly.\n"
+        )
+        if context_str:
+            system_instruction += (
+                f"\nHere is some relevant context from memory to help answer the user request:\n{context_str}\n"
+            )
+
+        # 4. Resolve LLM provider & settings
+        provider_name = settings.LLM_PROVIDER
+        try:
+            provider = ProviderFactory.get_provider(provider_name)
+        except ValueError as e:
+            raise ChatProviderException(f"Failed to load provider: {str(e)}") from e
+
+        if provider_name == "gemini":
+            model_name = settings.GEMINI_MODEL
+        elif provider_name == "openai":
+            model_name = settings.OPENAI_MODEL
+        else:
+            model_name = settings.GEMINI_MODEL
+
+        # 5. Build LLM Chat completion messages
+        messages = [LLMChatMessage(role="system", content=system_instruction)]
+        for msg in history_messages:
+            messages.append(LLMChatMessage(role=msg.role, content=msg.content))
+        if not any(m.content == user_message for m in history_messages):
+            messages.append(LLMChatMessage(role="user", content=user_message))
+
+        chat_request = ChatCompletionRequest(
+            model=model_name,
+            messages=messages
+        )
+
+        # 6. Stream completion from LLM provider
+        import json
+        full_response = []
+        try:
+            yield f"event: started\ndata: {json.dumps({'status': 'started'})}\n\n"
+            
+            async for chunk in provider.generate_stream(chat_request):
+                full_response.append(chunk)
+                yield f"event: token\ndata: {json.dumps({'token': chunk})}\n\n"
+                
+            assistant_response = "".join(full_response)
+            
+            # 7. Save assistant reply to memory
+            try:
+                self.manager.save_conversation(
+                    conversation_id="default",
+                    message=assistant_response,
+                    role="assistant"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save assistant response to memory: {e}")
+                
+            yield f"event: completed\ndata: {json.dumps({'response': assistant_response, 'provider': provider_name})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming completions failed: {e}")
+            yield f"event: failed\ndata: {json.dumps({'error': str(e)})}\n\n"

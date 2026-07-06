@@ -1,5 +1,6 @@
 from typing import List
 from fastapi import APIRouter, status, Depends
+from fastapi.responses import StreamingResponse
 from app.chat.schemas import ChatRequest, ChatResponse, ChatHistoryMessage
 from app.chat.service import ChatService
 
@@ -84,3 +85,25 @@ async def clear_history(
 ):
     await service.clear_chat_history()
     return None
+
+@router.post(
+    "/stream",
+    summary="Send a message to the assistant and stream the response",
+    description="Accepts a user query, retrieves relevant planning/execution context from Memory, and yields SSE chunks.",
+    responses={
+        200: {
+            "description": "SSE Event stream with token chunks",
+            "content": {
+                "text/event-stream": {}
+            }
+        }
+    }
+)
+async def stream_chat_message(
+    request: ChatRequest,
+    service: ChatService = Depends(get_chat_service)
+):
+    return StreamingResponse(
+        service.send_message_stream(request.message),
+        media_type="text/event-stream"
+    )
