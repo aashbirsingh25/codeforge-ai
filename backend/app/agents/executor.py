@@ -84,6 +84,19 @@ class AgentExecutor:
                 duration_seconds=duration,
                 retry_count=0
             )
+            # Save execution summary for dependency error
+            try:
+                from app.memory.manager import MemoryManager
+                MemoryManager().save_execution(
+                    execution_id=self.execution_id,
+                    goal=self.plan.goal,
+                    status="FAILED",
+                    tasks=self.plan.tasks,
+                    duration=duration,
+                    error=str(e)
+                )
+            except Exception as ex_mem:
+                logger.warning(f"Failed to save execution summary to memory on dependency error: {ex_mem}")
             raise
 
         logger.info(f"Starting execution of plan. Goal: '{self.plan.goal}'. Task order: {[t.id for t in ordered_tasks]}")
@@ -129,9 +142,37 @@ class AgentExecutor:
                         logger.info(
                             f"tool output: content={observation.content if observation.success else observation.error}"
                         )
+                        try:
+                            from app.memory.manager import MemoryManager
+                            mgr = MemoryManager()
+                            mgr.save_tool_output(
+                                tool_name=action.tool_name,
+                                args=action.tool_args,
+                                output=observation.content or "",
+                                success=observation.success
+                            )
+                            obs_content = observation.content if observation.success else (observation.error or "Unknown error")
+                            mgr.save_observation(
+                                task_id=task.id,
+                                content=obs_content,
+                                success=observation.success
+                            )
+                        except Exception as e_mem:
+                            logger.warning(f"Failed to save tool callback to memory: {e_mem}")
 
                     def record_react_step_callback(step: ReActStep):
                         self.react_trace.steps.append(step)
+                        try:
+                            from app.memory.manager import MemoryManager
+                            mgr = MemoryManager()
+                            if step.thought and step.thought.reasoning:
+                                mgr.save_observation(
+                                    task_id=task.id,
+                                    content=f"Thought reasoning: {step.thought.reasoning}",
+                                    success=True
+                                )
+                        except Exception as e_mem:
+                            logger.warning(f"Failed to record react step to memory: {e_mem}")
 
                     context = {
                         "task": task,
@@ -153,9 +194,23 @@ class AgentExecutor:
                     logger.error(f"task failed due to provider error: task_id={task.id} error={ex}")
                     self.state_mgr.fail_task(task.id, str(ex))
                     self.state_mgr.finalize()
+                    try:
+                        from app.memory.manager import MemoryManager
+                        MemoryManager().save_observation(task_id=task.id, content=f"LLM Error: {str(ex)}", success=False)
+                    except Exception:
+                        pass
                     raise
                 except Exception as ex:
                     task_error_details = str(ex)
+                    try:
+                        from app.memory.manager import MemoryManager
+                        MemoryManager().save_observation(
+                            task_id=task.id,
+                            content=f"Error on retry {current_retry}: {str(ex)}",
+                            success=False
+                        )
+                    except Exception:
+                        pass
                     
                     if current_retry < self.max_retries:
                         count = self.state_mgr.increment_retry(task.id)
@@ -182,7 +237,7 @@ class AgentExecutor:
             retry_count=total_retries
         )
 
-        return ExecutionResponse(
+        response = ExecutionResponse(
             execution_id=self.execution_id,
             status="COMPLETED" if not self.state_mgr.state.failed_tasks else "FAILED",
             plan=self.plan,
@@ -190,3 +245,22 @@ class AgentExecutor:
             metrics=metrics,
             react_trace=self.react_trace
         )
+
+        # Save execution summary to memory
+        try:
+            from app.memory.manager import MemoryManager
+            exec_error = None
+            if self.state_mgr.state.failed_tasks:
+                exec_error = f"Failed tasks: {self.state_mgr.state.failed_tasks}"
+            MemoryManager().save_execution(
+                execution_id=self.execution_id,
+                goal=self.plan.goal,
+                status=response.status,
+                tasks=self.plan.tasks,
+                duration=duration,
+                error=exec_error
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save execution summary to memory: {e}")
+
+        return response

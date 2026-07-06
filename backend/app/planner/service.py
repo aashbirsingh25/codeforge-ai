@@ -57,6 +57,15 @@ class PlannerService:
         planner = Planner(strategy)
         system_prompt, user_prompt = planner.get_prompts(request.goal)
 
+        # Query MemoryManager & retrieve relevant previous context
+        try:
+            from app.memory.service import memory_service
+            memory_context = await memory_service.get_planning_context(request.goal)
+            if memory_context:
+                user_prompt += f"\n\n### RELEVANT PREVIOUS CONTEXT & MEMORY\n{memory_context}"
+        except Exception as e:
+            logger.warning(f"Failed to retrieve planning memory context: {e}")
+
         chat_request = ChatCompletionRequest(
             model=model_name,
             messages=[
@@ -99,6 +108,13 @@ class PlannerService:
 
         duration = time.perf_counter() - start_time
         
+        # Save successful plan to memory
+        try:
+            from app.memory.manager import MemoryManager
+            MemoryManager().save_plan(goal=request.goal, plan=plan)
+        except Exception as e:
+            logger.warning(f"Failed to save plan to memory: {e}")
+
         # 6. Structured log of success
         logger.info(
             f"Execution plan completed: provider={provider_name} strategy={strategy_name} "
