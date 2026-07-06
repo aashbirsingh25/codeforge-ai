@@ -1,6 +1,7 @@
 import pytest
 import logging
 import json
+import asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -11,6 +12,11 @@ from app.agents.exceptions import (
     AgentDependencyError,
     AgentToolError,
     AgentRetryExceededError,
+    AgentTimeoutError,
+    AgentMaxIterationsError,
+    AgentMaxToolCallsError,
+    AgentRecursionError,
+    AgentInvalidToolError,
 )
 from app.agents.schemas import (
     ExecutionRequest,
@@ -21,6 +27,11 @@ from app.agents.schemas import (
     AgentResult,
     ExecutionStep,
     ExecutionMetrics,
+    Thought,
+    Action,
+    Observation,
+    ReActStep,
+    ReActTrace,
 )
 from app.agents.registry import (
     BaseAgent,
@@ -33,6 +44,7 @@ from app.agents.state import ExecutionStateManager
 from app.agents.service import execution_service, AgentExecutionService
 from app.planner.schemas import ExecutionPlan, Task, TaskStatus, TaskPriority, Complexity, PlanningResponse
 from app.llm.schemas import ChatCompletionResponse
+from app.llm.exceptions import LLMException
 from app.tools.registry import registry as tool_registry
 from app.tools.base import BaseTool
 from pydantic import BaseModel
@@ -605,4 +617,433 @@ def test_state_manager_edge_cases():
 
     # lookup nonexistent step
     assert mgr.get_step("non_existent") is None
+
+
+# --- 9. ReAct Engine Upgrade Comprehensive Tests ---
+
+@pytest.mark.asyncio
+async def test_react_successful_reasoning():
+    # Test successful reasoning and action steps trace recording
+    task = Task(id="t1", title="Task 1", description="Success test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    
+    agent = ExecutorAgent()
+    
+    call_tool_json = json.dumps({
+        "action": "call_tool",
+        "tool_name": "dummy_test_tool",
+        "tool_args": {"name": "Test"},
+        "thought": "I need to call the dummy tool to greet"
+    })
+    finish_json = json.dumps({
+        "action": "finish",
+        "success": True,
+        "output": "Greeted successfully",
+        "thought": "Greeting done"
+    })
+    
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=[
+        ChatCompletionResponse(content=call_tool_json, model="gemini"),
+        ChatCompletionResponse(content=finish_json, model="gemini")
+    ])
+    
+    steps = []
+    def step_cb(step):
+        steps.append(step)
+        
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "react_trace_callback": step_cb
+    }
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        res = await agent.execute("t1", context)
+        
+        assert res.success is True
+        assert res.output == "Greeted successfully"
+        assert len(steps) == 2
+        # First step checks
+        assert steps[0].thought.reasoning == "I need to call the dummy tool to greet"
+        assert steps[0].action.tool_name == "dummy_test_tool"
+        assert steps[0].action.tool_args == {"name": "Test"}
+        assert steps[0].observation.success is True
+        assert "Hello, Test!" in steps[0].observation.content
+        assert steps[0].duration_seconds >= 0
+        # Second step checks
+        assert steps[1].thought.reasoning == "Greeting done"
+        assert steps[1].action is None
+        assert steps[1].observation is None
+
+
+@pytest.mark.asyncio
+async def test_react_invalid_tool():
+    # Test invalid tool name results in a recorded failed observation
+    task = Task(id="t1", title="Task 1", description="Invalid tool", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    
+    agent = ExecutorAgent()
+    
+    bad_tool_json = json.dumps({
+        "action": "call_tool",
+        "tool_name": "fake_nonexistent_tool",
+        "tool_args": {},
+        "thought": "Calling a nonexistent tool"
+    })
+    finish_json = json.dumps({
+        "action": "finish",
+        "success": False,
+        "output": "Tool execution failed",
+        "thought": "I failed"
+    })
+    
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=[
+        ChatCompletionResponse(content=bad_tool_json, model="gemini"),
+        ChatCompletionResponse(content=finish_json, model="gemini")
+    ])
+    
+    steps = []
+    def step_cb(step):
+        steps.append(step)
+        
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "react_trace_callback": step_cb
+    }
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        res = await agent.execute("t1", context)
+        assert res.success is False
+        assert len(steps) == 2
+        assert steps[0].action.tool_name == "fake_nonexistent_tool"
+        assert steps[0].observation.success is False
+        assert "not found in registry" in steps[0].observation.error
+
+
+@pytest.mark.asyncio
+async def test_react_repeated_failures_recursion_protection():
+    # Test consecutive identical tool calls triggers recursion protection
+    task = Task(id="t1", title="Task 1", description="Recursion test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    
+    agent = ExecutorAgent()
+    
+    identical_call_json = json.dumps({
+        "action": "call_tool",
+        "tool_name": "dummy_test_tool",
+        "tool_args": {"name": "Same"},
+        "thought": "Calling same tool consecutively"
+    })
+    
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(return_value=ChatCompletionResponse(content=identical_call_json, model="gemini"))
+    
+    # Let's set recursion limit to 2
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "recursion_limit": 2,
+        "propagate_exceptions": True
+    }
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        with pytest.raises(AgentRecursionError) as excinfo:
+            await agent.execute("t1", context)
+        assert "Recursion protection triggered" in str(excinfo.value)
+        assert "dummy_test_tool" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_react_timeout():
+    task = Task(id="t1", title="Task 1", description="Timeout test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    
+    agent = ExecutorAgent()
+    
+    async def delayed_generate(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return ChatCompletionResponse(
+            content=json.dumps({"action": "finish", "success": True, "output": "ok"}),
+            model="gemini"
+        )
+        
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=delayed_generate)
+    
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "timeout": 0.01,  # extremely short timeout
+        "propagate_exceptions": True
+    }
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        with pytest.raises(AgentTimeoutError) as excinfo:
+            await agent.execute("t1", context)
+        assert "timed out after" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_react_max_iteration_exceeded():
+    task = Task(id="t1", title="Task 1", description="Max iteration test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    
+    agent = ExecutorAgent()
+    
+    call_tool_json = json.dumps({
+        "action": "call_tool",
+        "tool_name": "dummy_test_tool",
+        "tool_args": {"name": "Test"},
+        "thought": "Let's call tool"
+    })
+    
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(return_value=ChatCompletionResponse(content=call_tool_json, model="gemini"))
+    
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "max_iterations": 2,
+        "propagate_exceptions": True
+    }
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        with pytest.raises(AgentMaxIterationsError) as excinfo:
+            await agent.execute("t1", context)
+        assert "exceeded maximum ReAct steps" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_react_tool_execution_error():
+    task = Task(id="t1", title="Task 1", description="Tool error test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    
+    agent = ExecutorAgent()
+    
+    # We will invoke dummy_test_tool without passing required argument 'name' to trigger schema validation error
+    bad_args_json = json.dumps({
+        "action": "call_tool",
+        "tool_name": "dummy_test_tool",
+        "tool_args": {}, # missing name
+        "thought": "I'm calling the tool with bad args"
+    })
+    finish_json = json.dumps({
+        "action": "finish",
+        "success": False,
+        "output": "Ended due to tool errors",
+        "thought": "Too many validation issues"
+    })
+    
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=[
+        ChatCompletionResponse(content=bad_args_json, model="gemini"),
+        ChatCompletionResponse(content=finish_json, model="gemini")
+    ])
+    
+    steps = []
+    def step_cb(step):
+        steps.append(step)
+        
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "react_trace_callback": step_cb
+    }
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        res = await agent.execute("t1", context)
+        assert res.success is False
+        assert len(steps) == 2
+        assert steps[0].observation.success is False
+        assert "Validation Error" in steps[0].observation.error or "Input validation failed" in steps[0].observation.error
+
+
+@pytest.mark.asyncio
+async def test_react_llm_malformed_response():
+    task = Task(id="t1", title="Task 1", description="Malformed JSON test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    
+    agent = ExecutorAgent()
+    
+    malformed_response = "Here is some raw text that is not JSON at all."
+    finish_json = json.dumps({
+        "action": "finish",
+        "success": True,
+        "output": "Recovered and finished",
+        "thought": "JSON format fixed"
+    })
+    
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=[
+        ChatCompletionResponse(content=malformed_response, model="gemini"),
+        ChatCompletionResponse(content=finish_json, model="gemini")
+    ])
+    
+    steps = []
+    def step_cb(step):
+        steps.append(step)
+        
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "react_trace_callback": step_cb
+    }
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        res = await agent.execute("t1", context)
+        assert res.success is True
+        assert len(steps) == 2
+        # First step should be marked as malformed
+        assert steps[0].thought.reasoning == f"Malformed LLM response: {malformed_response}"
+        assert steps[0].action is None
+        assert steps[0].observation.success is False
+        assert "valid JSON" in steps[0].observation.error
+        
+        # Second step succeeds
+        assert steps[1].thought.reasoning == "JSON format fixed"
+
+
+@pytest.mark.asyncio
+async def test_react_successful_completion_api_trace():
+    # Setup test plan
+    plan = ExecutionPlan(
+        goal="testing react trace endpoint",
+        tasks=[
+            Task(id="task-1", title="T1", description="D1", priority=TaskPriority.LOW,
+                 estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+        ]
+    )
+    
+    call_tool_json = json.dumps({
+        "action": "call_tool",
+        "tool_name": "dummy_test_tool",
+        "tool_args": {"name": "API"},
+        "thought": "Call dummy tool"
+    })
+    finish_json = json.dumps({
+        "action": "finish",
+        "success": True,
+        "output": "Completed plan",
+        "thought": "Done"
+    })
+    
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=[
+        ChatCompletionResponse(content=call_tool_json, model="gemini"),
+        ChatCompletionResponse(content=finish_json, model="gemini")
+    ])
+    
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        # Trigger execute via service
+        req = ExecutionRequest(plan=plan)
+        response = await execution_service.execute_request(req)
+        
+        execution_id = response.execution_id
+        assert response.status == "COMPLETED"
+        assert response.react_trace is not None
+        assert len(response.react_trace.steps) == 2
+        
+        # Test endpoint
+        api_res = client.get(f"/api/v1/agents/{execution_id}/trace")
+        assert api_res.status_code == status.HTTP_200_OK
+        data = api_res.json()
+        assert data["execution_id"] == execution_id
+        assert len(data["steps"]) == 2
+        assert data["steps"][0]["thought"]["reasoning"] == "Call dummy tool"
+        assert data["steps"][1]["thought"]["reasoning"] == "Done"
+        
+        # Test nonexistent execution trace
+        nonexistent_res = client.get("/api/v1/agents/some-nonexistent-uuid/trace")
+        assert nonexistent_res.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_executor_agent_properties():
+    agent = ExecutorAgent()
+    assert agent.description == "Executes tasks by dynamically invoking workspace tools."
+
+
+@pytest.mark.asyncio
+async def test_react_openai_provider_model_resolution():
+    task = Task(id="t1", title="T1", description="D1", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    agent = ExecutorAgent()
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(return_value=ChatCompletionResponse(content=json.dumps({"action": "finish", "success": True, "output": "ok"}), model="gpt-4o"))
+    
+    context = {"task": task, "provider": "openai"}
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        res = await agent.execute("t1", context)
+        assert res.success is True
+
+
+@pytest.mark.asyncio
+async def test_react_max_tool_calls_exceeded():
+    task = Task(id="t1", title="Task 1", description="Max tools test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    agent = ExecutorAgent()
+    call_tool_json = json.dumps({
+        "action": "call_tool",
+        "tool_name": "dummy_test_tool",
+        "tool_args": {"name": "Test"},
+        "thought": "Let's call tool"
+    })
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(return_value=ChatCompletionResponse(content=call_tool_json, model="gemini"))
+    
+    context = {
+        "task": task,
+        "provider": "gemini",
+        "max_tool_calls": 1,
+        "propagate_exceptions": True
+    }
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        with pytest.raises(AgentMaxToolCallsError) as excinfo:
+            await agent.execute("t1", context)
+        assert "exceeded maximum tool calls" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_react_markdown_json_parsing():
+    task = Task(id="t1", title="Task 1", description="Markdown JSON test", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    agent = ExecutorAgent()
+    markdown_json = "```json\n" + json.dumps({
+        "action": "finish",
+        "success": True,
+        "output": "Parsed markdown JSON block successfully"
+    }) + "\n```"
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(return_value=ChatCompletionResponse(content=markdown_json, model="gemini"))
+    
+    context = {"task": task, "provider": "gemini"}
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        res = await agent.execute("t1", context)
+        assert res.success is True
+        assert res.output == "Parsed markdown JSON block successfully"
+
+
+@pytest.mark.asyncio
+async def test_react_llm_exception_propagation():
+    task = Task(id="t1", title="T1", description="D1", priority=TaskPriority.LOW,
+                estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+    agent = ExecutorAgent()
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=LLMException("LLM quota exceeded"))
+    
+    context = {"task": task, "provider": "gemini", "propagate_exceptions": True}
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        with pytest.raises(LLMException):
+            await agent.execute("t1", context)
+
+
+def test_exceptions_coverage():
+    err1 = AgentToolError("tool error")
+    assert err1.status_code == 422
+    err2 = AgentInvalidToolError("invalid tool")
+    assert err2.status_code == 400
+
+
 

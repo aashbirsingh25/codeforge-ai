@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
 
+    # Agent ReAct Configuration Limits
+    AGENT_MAX_ITERATIONS: int = 10
+    AGENT_MAX_TOOL_CALLS: int = 10
+    AGENT_TIMEOUT: float = 120.0
+    AGENT_RECURSION_LIMIT: int = 3
+
+
     def __getattribute__(self, name):
         """Allows config values to be loaded dynamically from the environment.
 

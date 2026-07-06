@@ -6,7 +6,15 @@ from typing import Optional, Dict, List, Any
 from collections import deque
 
 from app.planner.schemas import ExecutionPlan, Task
-from app.agents.schemas import ExecutionResponse, ExecutionMetrics, AgentResult, AgentAction, AgentObservation
+from app.agents.schemas import (
+    ExecutionResponse,
+    ExecutionMetrics,
+    AgentResult,
+    AgentAction,
+    AgentObservation,
+    ReActTrace,
+    ReActStep
+)
 from app.agents.state import ExecutionStateManager
 from app.agents.registry import agent_registry
 from app.agents.exceptions import (
@@ -52,11 +60,13 @@ def topological_sort(tasks: List[Task]) -> List[Task]:
 
 
 class AgentExecutor:
-    def __init__(self, plan: ExecutionPlan, provider: str = "gemini", max_retries: int = 3):
+    def __init__(self, plan: ExecutionPlan, provider: str = "gemini", max_retries: int = 3, execution_id: Optional[str] = None):
         self.plan = plan
         self.provider = provider
         self.max_retries = max_retries
         self.state_mgr = ExecutionStateManager(plan)
+        self.execution_id = execution_id or str(uuid.uuid4())
+        self.react_trace = ReActTrace(execution_id=self.execution_id, steps=[])
 
     async def execute(self) -> ExecutionResponse:
         start_time_perf = time.perf_counter()
@@ -120,10 +130,14 @@ class AgentExecutor:
                             f"tool output: content={observation.content if observation.success else observation.error}"
                         )
 
+                    def record_react_step_callback(step: ReActStep):
+                        self.react_trace.steps.append(step)
+
                     context = {
                         "task": task,
                         "provider": self.provider,
-                        "action_recorder": record_action_callback
+                        "action_recorder": record_action_callback,
+                        "react_trace_callback": record_react_step_callback
                     }
                     
                     result = await agent.execute(task.id, context)
@@ -169,9 +183,10 @@ class AgentExecutor:
         )
 
         return ExecutionResponse(
-            execution_id=str(uuid.uuid4()),
+            execution_id=self.execution_id,
             status="COMPLETED" if not self.state_mgr.state.failed_tasks else "FAILED",
             plan=self.plan,
             state=self.state_mgr.state,
-            metrics=metrics
+            metrics=metrics,
+            react_trace=self.react_trace
         )

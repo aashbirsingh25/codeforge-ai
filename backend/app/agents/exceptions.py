@@ -20,3 +20,34 @@ class AgentRetryExceededError(AgentExecutionError):
     """Raised when a task has failed and exceeded the maximum allowed retries."""
     def __init__(self, message: str):
         super().__init__(message, status_code=status.HTTP_408_REQUEST_TIMEOUT)
+
+
+class AgentTimeoutError(AgentExecutionError):
+    """Raised when task execution exceeds the maximum allowed time (timeout)."""
+    def __init__(self, message: str):
+        super().__init__(message, status_code=status.HTTP_408_REQUEST_TIMEOUT)
+
+
+class AgentMaxIterationsError(AgentExecutionError):
+    """Raised when the agent exceeds the maximum allowed iterations/steps."""
+    def __init__(self, message: str):
+        super().__init__(message, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+class AgentMaxToolCallsError(AgentExecutionError):
+    """Raised when the agent exceeds the maximum allowed tool calls."""
+    def __init__(self, message: str):
+        super().__init__(message, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+class AgentRecursionError(AgentExecutionError):
+    """Raised when recursion/loop detection is triggered (e.g. repeated identical tool calls)."""
+    def __init__(self, message: str):
+        super().__init__(message, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+class AgentInvalidToolError(AgentExecutionError):
+    """Raised when an agent attempts to execute an unregistered or invalid tool."""
+    def __init__(self, message: str):
+        super().__init__(message, status_code=status.HTTP_400_BAD_REQUEST)
+

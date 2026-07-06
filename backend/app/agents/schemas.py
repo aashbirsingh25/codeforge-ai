@@ -48,9 +48,33 @@ class ExecutionMetrics(BaseModel):
     duration_seconds: Optional[float] = Field(None, description="Total execution duration in seconds")
     retry_count: int = Field(0, description="Total retries across all tasks")
 
+class Thought(BaseModel):
+    reasoning: str = Field(..., description="The reasoning or thoughts of the agent")
+
+class Action(BaseModel):
+    tool_name: str = Field(..., description="Name of the tool being called")
+    tool_args: Dict[str, Any] = Field(default_factory=dict, description="Arguments passed to the tool")
+
+class Observation(BaseModel):
+    content: str = Field(..., description="Output content of the tool execution")
+    success: bool = Field(..., description="Whether the tool execution succeeded")
+    error: Optional[str] = Field(None, description="Error message, if any")
+
+class ReActStep(BaseModel):
+    thought: Thought = Field(..., description="The thought/reasoning for this step")
+    action: Optional[Action] = Field(None, description="The action chosen, if any")
+    observation: Optional[Observation] = Field(None, description="The observation gathered, if any")
+    duration_seconds: float = Field(..., description="Duration of this step in seconds")
+
+class ReActTrace(BaseModel):
+    execution_id: str = Field(..., description="ID of the execution run")
+    steps: List[ReActStep] = Field(default_factory=list, description="Reasoning and action steps taken")
+
 class ExecutionResponse(BaseModel):
     execution_id: str = Field(..., description="Unique ID for this execution run")
     status: str = Field(..., description="Overall execution status")
     plan: ExecutionPlan = Field(..., description="The plan that was executed")
     state: ExecutionState = Field(..., description="Final/current execution state details")
     metrics: ExecutionMetrics = Field(..., description="Performance and retry metrics")
+    react_trace: Optional[ReActTrace] = Field(None, description="The reasoning trace for this execution")
+

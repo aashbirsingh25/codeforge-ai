@@ -1,7 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.agents.schemas import ExecutionRequest, ExecutionResponse
+from app.agents.schemas import ExecutionRequest, ExecutionResponse, ReActTrace
 from app.agents.service import execution_service, AgentExecutionService
 from app.planner.schemas import ExecutionPlan
 from app.core.exceptions import CodeForgeException
@@ -109,3 +109,26 @@ def get_execution_history(
     Lists historical and current execution logs.
     """
     return service.get_history()
+
+
+@router.get("/{execution_id}/trace", response_model=ReActTrace, status_code=status.HTTP_200_OK)
+def get_execution_trace(
+    execution_id: str,
+    service: AgentExecutionService = Depends(get_execution_service)
+):
+    """
+    Retrieve the complete reasoning and tool execution trace for a specific agent execution.
+    """
+    response = service.get_status(execution_id)
+    if not response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution with ID '{execution_id}' not found."
+        )
+    if not response.react_trace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No trace found for execution ID '{execution_id}'."
+        )
+    return response.react_trace
+

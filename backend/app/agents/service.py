@@ -28,7 +28,7 @@ class AgentExecutionService:
             plan = planning_resp.plan
         
         # 2. Run executor
-        executor = AgentExecutor(plan, provider=provider, max_retries=max_retries)
+        executor = AgentExecutor(plan, provider=provider, max_retries=max_retries, execution_id=execution_id)
         
         # Initialize an initial response
         import time
@@ -47,7 +47,8 @@ class AgentExecutionService:
             status="RUNNING",
             plan=plan,
             state=executor.state_mgr.state,
-            metrics=init_metrics
+            metrics=init_metrics,
+            react_trace=executor.react_trace
         )
         self._executions[execution_id] = init_response
         
@@ -74,7 +75,8 @@ class AgentExecutionService:
                 status="FAILED",
                 plan=plan,
                 state=executor.state_mgr.state,
-                metrics=failed_metrics
+                metrics=failed_metrics,
+                react_trace=executor.react_trace
             )
             self._executions[execution_id] = response
             raise
