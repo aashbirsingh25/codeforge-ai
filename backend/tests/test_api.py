@@ -81,7 +81,7 @@ def test_get_tool_endpoint_not_found():
     assert "not found" in response.json()["error"]["message"].lower()
 
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock, AsyncMock
 from app.llm.exceptions import (
     LLMAuthenticationException,
     LLMUnsupportedModelException,
@@ -142,3 +142,99 @@ def test_api_error_workspace_permission():
         data = response.json()
         assert data["error"]["type"] == "WorkspaceException"
         assert data["error"]["message"] == "workspace violation"
+
+
+def test_agents_execute_quota_exceeded():
+    from app.planner.schemas import ExecutionPlan, Task, TaskPriority, Complexity
+    plan = ExecutionPlan(
+        goal="build app",
+        tasks=[
+            Task(id="t1", title="T1", description="D1", priority=TaskPriority.LOW,
+                 estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+        ]
+    )
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=LLMRateLimitException("Gemini quota exceeded", provider="gemini"))
+
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        payload = {"plan": plan.model_dump()}
+        response = client.post("/api/v1/agents/execute", json=payload)
+        
+        assert response.status_code == 429
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["type"] == "LLMRateLimitException"
+        assert data["error"]["message"] == "Gemini quota exceeded"
+        assert data["error"]["provider"] == "gemini"
+
+
+def test_agents_execute_invalid_api_key():
+    from app.planner.schemas import ExecutionPlan, Task, TaskPriority, Complexity
+    plan = ExecutionPlan(
+        goal="build app",
+        tasks=[
+            Task(id="t1", title="T1", description="D1", priority=TaskPriority.LOW,
+                 estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+        ]
+    )
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=LLMAuthenticationException("Invalid API key", provider="gemini"))
+
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        payload = {"plan": plan.model_dump()}
+        response = client.post("/api/v1/agents/execute", json=payload)
+        
+        assert response.status_code == 401
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["type"] == "LLMAuthenticationException"
+        assert data["error"]["message"] == "Invalid API key"
+        assert data["error"]["provider"] == "gemini"
+
+
+def test_agents_execute_unsupported_model():
+    from app.planner.schemas import ExecutionPlan, Task, TaskPriority, Complexity
+    plan = ExecutionPlan(
+        goal="build app",
+        tasks=[
+            Task(id="t1", title="T1", description="D1", priority=TaskPriority.LOW,
+                 estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+        ]
+    )
+    mock_provider = MagicMock()
+    mock_provider.generate = AsyncMock(side_effect=LLMUnsupportedModelException("Unsupported model", provider="gemini"))
+
+    with patch("app.llm.factory.ProviderFactory.get_provider", return_value=mock_provider):
+        payload = {"plan": plan.model_dump()}
+        response = client.post("/api/v1/agents/execute", json=payload)
+        
+        assert response.status_code == 400
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["type"] == "LLMUnsupportedModelException"
+        assert data["error"]["message"] == "Unsupported model"
+        assert data["error"]["provider"] == "gemini"
+
+
+def test_agents_execute_success():
+    from app.planner.schemas import ExecutionPlan, Task, TaskPriority, Complexity
+    from app.agents.schemas import AgentResult
+    plan = ExecutionPlan(
+        goal="build app",
+        tasks=[
+            Task(id="t1", title="T1", description="D1", priority=TaskPriority.LOW,
+                 estimated_complexity=Complexity.TRIVIAL, estimated_duration="1h")
+        ]
+    )
+    mock_executor_agent = MagicMock()
+    mock_executor_agent.execute = AsyncMock(return_value=AgentResult(success=True, output="T1 complete"))
+
+    with patch("app.agents.registry.agent_registry.get_agent", return_value=mock_executor_agent):
+        payload = {"plan": plan.model_dump()}
+        response = client.post("/api/v1/agents/execute", json=payload)
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["status"] == "COMPLETED"
+        assert "t1" in data["state"]["completed_tasks"]
+

@@ -1,0 +1,177 @@
+import logging
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Optional, Dict, List, Any
+from collections import deque
+
+from app.planner.schemas import ExecutionPlan, Task
+from app.agents.schemas import ExecutionResponse, ExecutionMetrics, AgentResult, AgentAction, AgentObservation
+from app.agents.state import ExecutionStateManager
+from app.agents.registry import agent_registry
+from app.agents.exceptions import (
+    AgentExecutionError,
+    AgentDependencyError,
+    AgentToolError,
+    AgentRetryExceededError
+)
+from app.llm.exceptions import LLMException
+
+logger = logging.getLogger("app.agents.executor")
+
+
+def topological_sort(tasks: List[Task]) -> List[Task]:
+    """Arranges tasks based on dependency graph, checking for cycles and missing tasks."""
+    task_map = {t.id: t for t in tasks}
+    adj = {t.id: [] for t in tasks}
+    in_degree = {t.id: 0 for t in tasks}
+    
+    for t in tasks:
+        for dep in t.dependencies:
+            if dep in task_map:
+                adj[dep].append(t.id)
+                in_degree[t.id] += 1
+            else:
+                raise AgentDependencyError(f"Task '{t.id}' depends on missing task '{dep}'.")
+
+    queue = deque([t.id for t in tasks if in_degree[t.id] == 0])
+    sorted_ids = []
+    
+    while queue:
+        u = queue.popleft()
+        sorted_ids.append(u)
+        for v in adj[u]:
+            in_degree[v] -= 1
+            if in_degree[v] == 0:
+                queue.append(v)
+                
+    if len(sorted_ids) != len(tasks):
+        raise AgentDependencyError("Circular dependency detected in execution plan.")
+        
+    return [task_map[tid] for tid in sorted_ids]
+
+
+class AgentExecutor:
+    def __init__(self, plan: ExecutionPlan, provider: str = "gemini", max_retries: int = 3):
+        self.plan = plan
+        self.provider = provider
+        self.max_retries = max_retries
+        self.state_mgr = ExecutionStateManager(plan)
+
+    async def execute(self) -> ExecutionResponse:
+        start_time_perf = time.perf_counter()
+        start_time_iso = self.state_mgr.state.timestamps["start_time"]
+        
+        try:
+            ordered_tasks = topological_sort(self.plan.tasks)
+        except AgentDependencyError as e:
+            self.state_mgr.finalize()
+            end_time_perf = time.perf_counter()
+            duration = end_time_perf - start_time_perf
+            metrics = ExecutionMetrics(
+                start_time=start_time_iso,
+                end_time=self.state_mgr.state.timestamps["end_time"],
+                duration_seconds=duration,
+                retry_count=0
+            )
+            raise
+
+        logger.info(f"Starting execution of plan. Goal: '{self.plan.goal}'. Task order: {[t.id for t in ordered_tasks]}")
+
+        for task in ordered_tasks:
+            # Skip completed tasks
+            if task.id in self.state_mgr.state.completed_tasks:
+                logger.info(f"skipping completed task: task_id={task.id}")
+                continue
+
+            # Skip failed tasks
+            if task.id in self.state_mgr.state.failed_tasks:
+                logger.info(f"skipping failed task: task_id={task.id}")
+                continue
+
+            # Detect failed dependencies
+            failed_deps = [dep for dep in task.dependencies if dep in self.state_mgr.state.failed_tasks]
+            if failed_deps:
+                error_msg = f"Task '{task.id}' cannot be executed due to failed dependencies: {failed_deps}."
+                logger.error(f"task failed: task_id={task.id} error={error_msg}")
+                self.state_mgr.fail_task(task.id, error_msg)
+                self.state_mgr.finalize()
+                raise AgentDependencyError(error_msg)
+
+            # Start task execution
+            self.state_mgr.start_task(task.id)
+            logger.info(f"task started: task_id={task.id}")
+
+            success = False
+            task_error_details = ""
+            
+            while not success:
+                current_retry = self.state_mgr.state.retry_count.get(task.id, 0)
+                
+                try:
+                    agent = agent_registry.get_agent("ExecutorAgent")
+                    
+                    def record_action_callback(action: AgentAction, observation: AgentObservation):
+                        self.state_mgr.record_action_and_observation(task.id, action, observation)
+                        logger.info(
+                            f"tool invoked: tool_name={action.tool_name} success={observation.success}"
+                        )
+                        logger.info(
+                            f"tool output: content={observation.content if observation.success else observation.error}"
+                        )
+
+                    context = {
+                        "task": task,
+                        "provider": self.provider,
+                        "action_recorder": record_action_callback
+                    }
+                    
+                    result = await agent.execute(task.id, context)
+                    
+                    if result.success:
+                        self.state_mgr.complete_task(task.id, result.output)
+                        logger.info(f"task completed: task_id={task.id}")
+                        success = True
+                    else:
+                        raise AgentExecutionError(result.error or "Agent returned failure.")
+
+                except LLMException as ex:
+                    logger.error(f"task failed due to provider error: task_id={task.id} error={ex}")
+                    self.state_mgr.fail_task(task.id, str(ex))
+                    self.state_mgr.finalize()
+                    raise
+                except Exception as ex:
+                    task_error_details = str(ex)
+                    
+                    if current_retry < self.max_retries:
+                        count = self.state_mgr.increment_retry(task.id)
+                        logger.info(f"retry attempt: task_id={task.id} retry_count={count}")
+                    else:
+                        logger.error(f"task failed: task_id={task.id} error={task_error_details}")
+                        self.state_mgr.fail_task(task.id, f"Retry limit exceeded. Last error: {task_error_details}")
+                        self.state_mgr.finalize()
+                        raise AgentRetryExceededError(
+                            f"Task '{task.id}' failed after {self.max_retries} retries. Last error: {task_error_details}"
+                        ) from ex
+
+        self.state_mgr.finalize()
+        end_time_perf = time.perf_counter()
+        duration = end_time_perf - start_time_perf
+        
+        logger.info(f"execution duration: {duration:.4f}s")
+        total_retries = sum(self.state_mgr.state.retry_count.values())
+        
+        metrics = ExecutionMetrics(
+            start_time=start_time_iso,
+            end_time=self.state_mgr.state.timestamps["end_time"],
+            duration_seconds=duration,
+            retry_count=total_retries
+        )
+
+        return ExecutionResponse(
+            execution_id=str(uuid.uuid4()),
+            status="COMPLETED" if not self.state_mgr.state.failed_tasks else "FAILED",
+            plan=self.plan,
+            state=self.state_mgr.state,
+            metrics=metrics
+        )
