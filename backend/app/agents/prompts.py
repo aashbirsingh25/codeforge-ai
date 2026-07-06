@@ -34,3 +34,17 @@ Previous history/observations:
 
 What is your next action?
 """
+
+CODEGEN_SYSTEM_PROMPT = """You are an expert autonomous software engineer.
+Your task is to generate clean, well-structured, production-ready code based on natural language requirements.
+Support Python. Ensure the code includes proper docstrings, typing hints, error handling, and conforms to PEP 8 standards.
+
+Output the code wrapped in a ```python ... ``` block. Do not write explanation outside the markdown block.
+"""
+
+CODEGEN_USER_PROMPT = """Requirements:
+{requirements}
+
+Please generate the complete, correct source code.
+"""
+

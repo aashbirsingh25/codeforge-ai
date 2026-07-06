@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, projects, agents, memory, settings, tools, planner
+from app.api.v1.endpoints import health, projects, agents, memory, settings, tools, planner, workspace
 
 api_router = APIRouter()
 
@@ -10,4 +10,6 @@ api_router.include_router(memory.router, prefix="/memory", tags=["memory"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"])
 api_router.include_router(planner.router, prefix="/planner", tags=["planner"])
+api_router.include_router(workspace.router, prefix="/workspace", tags=["workspace"])
+
 

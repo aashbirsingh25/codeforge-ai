@@ -79,3 +79,74 @@ class GitStatusResponse(BaseModel):
     status_output: str = Field(..., description="Output from git status command")
     is_clean: bool = Field(..., description="True if workspace contains no uncommitted or modified files")
     exit_code: int = Field(..., description="Exit status code of the git status execution")
+
+
+# --- New Workspace & Code Generation Schemas ---
+
+class CreateFileRequest(BaseModel):
+    path: str = Field(..., description="Path to the file to create, relative to workspace root")
+    content: str = Field(..., description="The content to write to the file")
+    overwrite: bool = Field(False, description="Whether to overwrite if the file already exists")
+
+
+class CreateFileResponse(BaseModel):
+    path: str = Field(..., description="Path of the file created")
+    success: bool = Field(..., description="Whether the operation succeeded")
+    message: str = Field(..., description="Status message detailing the outcome")
+
+
+class UpdateFileRequest(BaseModel):
+    path: str = Field(..., description="Path to the file to update, relative to workspace root")
+    content: str = Field(..., description="The replacement content")
+    target_content: Optional[str] = Field(None, description="Optional target content block to replace (partial edit)")
+    confirm: bool = Field(True, description="Whether to apply changes directly or just return diff for review")
+
+
+class UpdateFileResponse(BaseModel):
+    path: str = Field(..., description="Path of the file updated")
+    applied: bool = Field(..., description="Whether the update was applied")
+    message: str = Field(..., description="Status message detailing the outcome")
+    diff: Optional[str] = Field(None, description="The unified diff of changes")
+
+
+class DeleteFileRequest(BaseModel):
+    path: str = Field(..., description="Path to the file or directory to delete, relative to workspace root")
+
+
+class DeleteFileResponse(BaseModel):
+    path: str = Field(..., description="Path of the file or directory deleted")
+    success: bool = Field(..., description="Whether the operation succeeded")
+    message: str = Field(..., description="Status message detailing the outcome")
+
+
+class CreateDirectoryRequest(BaseModel):
+    path: str = Field(..., description="Path to the directory to create, relative to workspace root")
+
+
+class CreateDirectoryResponse(BaseModel):
+    path: str = Field(..., description="Path of the directory created")
+    success: bool = Field(..., description="Whether the operation succeeded")
+    message: str = Field(..., description="Status message detailing the outcome")
+
+
+class GenerateCodeRequest(BaseModel):
+    requirements: str = Field(..., description="Natural language requirements describing the desired code")
+    language: str = Field("python", description="Target programming language (default: python)")
+
+
+class GenerateCodeResponse(BaseModel):
+    code: str = Field(..., description="The generated source code block")
+    success: bool = Field(..., description="Whether the generation succeeded")
+
+
+class ExecutePythonRequest(BaseModel):
+    code: str = Field(..., description="Python source code to execute")
+    timeout: float = Field(30.0, description="Maximum execution timeout in seconds")
+
+
+class ExecutePythonResponse(BaseModel):
+    stdout: str = Field(..., description="Captured standard output")
+    stderr: str = Field(..., description="Captured standard error")
+    exit_code: int = Field(..., description="Exit code of the execution process")
+    timeout_expired: bool = Field(..., description="Whether the process timed out")
+

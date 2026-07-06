@@ -26,7 +26,7 @@ from app.agents.exceptions import (
 from app.llm.factory import ProviderFactory
 from app.core.config import settings
 from app.tools.registry import registry as tool_registry
-from app.agents.prompts import AGENT_SYSTEM_PROMPT, AGENT_USER_PROMPT
+from app.agents.prompts import AGENT_SYSTEM_PROMPT, AGENT_USER_PROMPT, CODEGEN_SYSTEM_PROMPT, CODEGEN_USER_PROMPT
 from app.llm.schemas import ChatCompletionRequest, ChatMessage
 from app.llm.exceptions import LLMException
 
@@ -375,6 +375,73 @@ class AgentRegistry:
         return list(self._agents.keys())
 
 
+class CodeGenerationAgent(BaseAgent):
+    @property
+    def name(self) -> str:
+        return "CodeGenerationAgent"
+
+    @property
+    def description(self) -> str:
+        return "Generates source code from natural language requirements."
+
+    async def execute(self, task_id: str, context: Dict[str, Any], *args, **kwargs) -> AgentResult:
+        requirements = context.get("requirements") or context.get("prompt")
+        if not requirements:
+            return AgentResult(success=False, error="No requirements or prompt provided in context for CodeGenerationAgent.")
+
+        provider_name = context.get("provider") or "gemini"
+        try:
+            provider = ProviderFactory.get_provider(provider_name)
+        except Exception as e:
+            return AgentResult(success=False, error=f"Failed to load LLM provider '{provider_name}': {e}")
+
+        # Resolve model name
+        if provider_name == "gemini":
+            model_name = settings.GEMINI_MODEL
+        elif provider_name == "openai":
+            model_name = settings.OPENAI_MODEL
+        else:
+            model_name = settings.GEMINI_MODEL
+
+        user_prompt = CODEGEN_USER_PROMPT.format(requirements=requirements)
+        chat_req = ChatCompletionRequest(
+            model=model_name,
+            messages=[
+                ChatMessage(role="system", content=CODEGEN_SYSTEM_PROMPT),
+                ChatMessage(role="user", content=user_prompt)
+            ]
+        )
+
+        try:
+            chat_res = await provider.generate(chat_req)
+            response_text = chat_res.content
+            
+            # Extract code from ```python ... ``` block if present
+            code = response_text.strip()
+            if "```python" in code:
+                # Extract content inside the block
+                parts = code.split("```python", 1)
+                if len(parts) > 1:
+                    code_part = parts[1].split("```", 1)
+                    if len(code_part) > 0:
+                        code = code_part[0].strip()
+            elif "```" in code:
+                parts = code.split("```", 1)
+                if len(parts) > 1:
+                    code_part = parts[1].split("```", 1)
+                    if len(code_part) > 0:
+                        code = code_part[0].strip()
+
+            return AgentResult(success=True, output=code)
+        except LLMException:
+            raise
+        except Exception as e:
+            logger.error(f"CodeGeneration LLM generation failed: {e}")
+            return AgentResult(success=False, error=f"LLM generation failed: {str(e)}")
+
+
 agent_registry = AgentRegistry()
 agent_registry.register(PlannerAgent)
 agent_registry.register(ExecutorAgent)
+agent_registry.register(CodeGenerationAgent)
+
