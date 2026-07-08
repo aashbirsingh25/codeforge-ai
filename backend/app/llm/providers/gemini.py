@@ -1,6 +1,9 @@
 import functools
+import logging
 from typing import AsyncGenerator, List, Any
 import google.generativeai as genai
+
+logger = logging.getLogger("app.llm.providers.gemini")
 from google.api_core.exceptions import (
     InvalidArgument,
     PermissionDenied,
@@ -31,13 +34,13 @@ def translate_exceptions(func):
         except LLMException:
             raise
         except (PermissionDenied, Unauthenticated) as e:
-            raise LLMAuthenticationException("Gemini API key is invalid or unauthenticated.", e) from e
+            raise LLMAuthenticationException(f"Gemini API key is invalid or unauthenticated. Details: {str(e)}", e) from e
         except ResourceExhausted as e:
-            raise LLMRateLimitException("Gemini rate limit exceeded or quota exhausted.", e) from e
+            raise LLMRateLimitException(f"Gemini rate limit exceeded or quota exhausted. Details: {str(e)}", e) from e
         except DeadlineExceeded as e:
-            raise LLMTimeoutException("Gemini connection timed out.", e) from e
+            raise LLMTimeoutException(f"Gemini connection timed out. Details: {str(e)}", e) from e
         except ServiceUnavailable as e:
-            raise LLMProviderUnavailableException("Gemini API service is currently offline or unreachable.", e) from e
+            raise LLMProviderUnavailableException(f"Gemini API service is currently offline or unreachable. Details: {str(e)}", e) from e
         except InvalidArgument as e:
             msg = str(e)
             if "model" in msg.lower() or "not found" in msg.lower():
@@ -58,13 +61,13 @@ def translate_exceptions_stream(func):
         except LLMException:
             raise
         except (PermissionDenied, Unauthenticated) as e:
-            raise LLMAuthenticationException("Gemini API key is invalid or unauthenticated.", e) from e
+            raise LLMAuthenticationException(f"Gemini API key is invalid or unauthenticated. Details: {str(e)}", e) from e
         except ResourceExhausted as e:
-            raise LLMRateLimitException("Gemini rate limit exceeded or quota exhausted.", e) from e
+            raise LLMRateLimitException(f"Gemini rate limit exceeded or quota exhausted. Details: {str(e)}", e) from e
         except DeadlineExceeded as e:
-            raise LLMTimeoutException("Gemini connection timed out.", e) from e
+            raise LLMTimeoutException(f"Gemini connection timed out. Details: {str(e)}", e) from e
         except ServiceUnavailable as e:
-            raise LLMProviderUnavailableException("Gemini API service is currently offline or unreachable.", e) from e
+            raise LLMProviderUnavailableException(f"Gemini API service is currently offline or unreachable. Details: {str(e)}", e) from e
         except InvalidArgument as e:
             msg = str(e)
             if "model" in msg.lower() or "not found" in msg.lower():

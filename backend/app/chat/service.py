@@ -160,6 +160,7 @@ class ChatService:
         )
 
     async def send_message_stream(self, user_message: str) -> AsyncGenerator[str, None]:
+        logger.info("Starting message stream processing")
         # 1. Save user message to memory
         try:
             self.manager.save_conversation(
@@ -256,5 +257,22 @@ class ChatService:
             yield f"event: completed\ndata: {json.dumps({'response': assistant_response, 'provider': provider_name})}\n\n"
             
         except Exception as e:
-            logger.error(f"Streaming completions failed: {e}")
-            yield f"event: failed\ndata: {json.dumps({'error': str(e)})}\n\n"
+            logger.error(f"Stream generation failed: {e}")
+            code = "INTERNAL_ERROR"
+            status_code = 500
+            
+            # Extract structured status_code or error code if it's a known LLMException
+            if isinstance(e, LLMException):
+                status_code = getattr(e, "status_code", 500)
+                if status_code == 429:
+                    code = "QUOTA_EXHAUSTED"
+                elif status_code == 401:
+                    code = "AUTHENTICATION_FAILED"
+                elif status_code == 503:
+                    code = "PROVIDER_UNAVAILABLE"
+                elif status_code == 504:
+                    code = "TIMEOUT"
+                else:
+                    code = "BAD_REQUEST"
+            
+            yield f"event: failed\ndata: {json.dumps({'error': str(e), 'code': code, 'status_code': status_code})}\n\n"

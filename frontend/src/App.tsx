@@ -1,24 +1,32 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard';
-import Projects from './pages/Projects';
-import Agents from './pages/Agents';
+import Chat from './pages/Chat';
+import Execution from './pages/Execution';
+import Workspace from './pages/Workspace';
 import Memory from './pages/Memory';
+import Metrics from './pages/Metrics';
 import Settings from './pages/Settings';
+import ErrorSnackbar from './components/ErrorSnackbar';
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<DashboardLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="projects" element={<Projects />} />
-          <Route path="agents" element={<Agents />} />
-          <Route path="memory" element={<Memory />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-      </Routes>
-    </Router>
+    <>
+      <Router>
+        <Routes>
+          <Route path="/" element={<DashboardLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="chat" element={<Chat />} />
+            <Route path="execution" element={<Execution />} />
+            <Route path="workspace" element={<Workspace />} />
+            <Route path="memory" element={<Memory />} />
+            <Route path="metrics" element={<Metrics />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+        </Routes>
+      </Router>
+      <ErrorSnackbar />
+    </>
   );
 }
 

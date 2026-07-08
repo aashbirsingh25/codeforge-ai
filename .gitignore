@@ -20,4 +20,16 @@ backend/.env
 node_modules/
 frontend/node_modules/
 
-workspace/
+/workspace/
+
+# Build folders
+dist/
+frontend/dist/
+
+# Logs
+*.log
+backend/*.log
+
+# IDEs
+.vscode/
+.idea/

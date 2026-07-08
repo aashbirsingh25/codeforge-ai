@@ -21,22 +21,31 @@ LOGGING_CONFIG: Dict[str, Any] = {
             "formatter": "standard",
             "level": "INFO",
             "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "detailed",
+            "level": "INFO",
+            "filename": "app.log",
+            "encoding": "utf-8",
+            "maxBytes": 5242880,
+            "backupCount": 3
         }
     },
     "loggers": {
         "app": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "INFO",
             "propagate": False
         },
         "uvicorn": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "INFO",
             "propagate": False
         }
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "file"],
         "level": "INFO"
     }
 }

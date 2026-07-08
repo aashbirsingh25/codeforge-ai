@@ -1,5 +1,45 @@
-const BASE_URL = '/api/v1';
+import axios from 'axios';
 
+// Create central Axios instance targeting the v1 API prefix
+export const api = axios.create({
+  baseURL: '/api/v1',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Listener pattern for global error toasts
+type ErrorListener = (message: string) => void;
+const errorListeners = new Set<ErrorListener>();
+
+export const subscribeToErrors = (listener: ErrorListener) => {
+  errorListeners.add(listener);
+  return () => {
+    errorListeners.delete(listener);
+  };
+};
+
+export const notifyError = (message: string) => {
+  errorListeners.forEach((listener) => listener(message));
+};
+
+// Response Interceptor for global error catching
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const detail = error.response?.data?.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+        : error.response?.data?.message || error.message || 'A network error occurred';
+    
+    notifyError(message);
+    return Promise.reject(error);
+  }
+);
+
+// Shared Schemas
 export interface HealthResponse {
   status: string;
   service: string;
@@ -18,34 +58,4 @@ export interface Agent {
   name: string;
   role: string;
   status: string;
-}
-
-export interface MemorySummary {
-  short_term_contexts_count: number;
-  long_term_vector_nodes: number;
-  status: string;
-}
-
-export async function fetchHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${BASE_URL}/health`);
-  if (!res.ok) throw new Error('Network error fetching health status');
-  return res.json();
-}
-
-export async function fetchProjects(): Promise<{ projects: Project[] }> {
-  const res = await fetch(`${BASE_URL}/projects`);
-  if (!res.ok) throw new Error('Network error fetching projects registry');
-  return res.json();
-}
-
-export async function fetchAgents(): Promise<{ agents: Agent[] }> {
-  const res = await fetch(`${BASE_URL}/agents`);
-  if (!res.ok) throw new Error('Network error fetching sub-agents configurations');
-  return res.json();
-}
-
-export async function fetchMemory(): Promise<MemorySummary> {
-  const res = await fetch(`${BASE_URL}/memory`);
-  if (!res.ok) throw new Error('Network error fetching memory allocations');
-  return res.json();
 }

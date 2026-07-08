@@ -248,7 +248,7 @@ async def test_gemini_health_check_validation_success():
     
     with patch("google.generativeai.list_models", return_value=[mock_model1]), \
          patch("google.generativeai.GenerativeModel.generate_content_async", new_callable=AsyncMock) as mock_gen, \
-         patch("app.core.config.settings.GEMINI_MODEL", "gemini-2.5-pro"):
+         patch.dict(os.environ, {"GEMINI_MODEL": "gemini-2.5-pro"}):
         
         mock_gen.return_value = MagicMock()
         result = await provider.health_check()
@@ -263,7 +263,7 @@ async def test_gemini_health_check_validation_failure():
     mock_model1.name = "models/gemini-2.5-flash"
     
     with patch("google.generativeai.list_models", return_value=[mock_model1]), \
-         patch("app.core.config.settings.GEMINI_MODEL", "gemini-2.5-pro"):
+         patch.dict(os.environ, {"GEMINI_MODEL": "gemini-2.5-pro"}):
         
         with pytest.raises(LLMUnsupportedModelException) as excinfo:
             await provider.health_check()
@@ -282,7 +282,7 @@ async def test_openai_health_check_validation_success():
     
     with patch.object(provider.client.models, "list", new_callable=AsyncMock) as mock_list, \
          patch.object(provider.client.chat.completions, "create", new_callable=AsyncMock) as mock_create, \
-         patch("app.core.config.settings.OPENAI_MODEL", "gpt-4o"):
+         patch.dict(os.environ, {"OPENAI_MODEL": "gpt-4o"}):
         
         mock_list.return_value = mock_models_list
         mock_create.return_value = MagicMock()
@@ -301,7 +301,7 @@ async def test_openai_health_check_validation_failure():
     mock_models_list.data = [mock_model1]
     
     with patch.object(provider.client.models, "list", new_callable=AsyncMock) as mock_list, \
-         patch("app.core.config.settings.OPENAI_MODEL", "gpt-4o"):
+         patch.dict(os.environ, {"OPENAI_MODEL": "gpt-4o"}):
         
         mock_list.return_value = mock_models_list
         
