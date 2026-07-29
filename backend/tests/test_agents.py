@@ -7,6 +7,10 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.config import settings
+
+client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+
 from app.agents.exceptions import (
     AgentExecutionError,
     AgentDependencyError,
@@ -49,7 +53,6 @@ from app.tools.registry import registry as tool_registry
 from app.tools.base import BaseTool
 from pydantic import BaseModel
 
-client = TestClient(app)
 
 
 # --- 1. Agent Registry Tests ---

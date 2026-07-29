@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: int = 60
 
 
+    # API Secret Key Authentication
+    API_SECRET_KEY: str
+
+    # CORS Allowed Origins (Comma-separated string)
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
+
     def __getattribute__(self, name):
         """Allows config values to be loaded dynamically from the environment.
 
@@ -49,7 +55,9 @@ class Settings(BaseSettings):
             "GEMINI_MODEL",
             "OPENAI_MODEL",
             "GEMINI_API_KEY",
-            "OPENAI_API_KEY"
+            "OPENAI_API_KEY",
+            "API_SECRET_KEY",
+            "CORS_ALLOWED_ORIGINS"
         }
         if name in dynamic_fields:
             if name in os.environ:

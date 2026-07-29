@@ -11,7 +11,11 @@ from app.memory.store import MemoryStore
 from app.memory.manager import MemoryManager
 from app.llm.exceptions import LLMException
 
-client = TestClient(app)
+from app.core.config import settings
+
+client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+
+
 
 @pytest.fixture(autouse=True)
 def setup_test_memory(tmp_path):

@@ -7,8 +7,11 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from fastapi.testclient import TestClient
 from app.main import app
-
 from app.core.config import settings
+
+client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+
+
 from app.memory.exceptions import (
     MemoryException,
     MemoryNotFoundException,
@@ -29,8 +32,6 @@ from app.planner.service import PlannerService
 from app.agents.executor import AgentExecutor
 from app.agents.schemas import AgentAction, AgentObservation, Thought, Action, Observation, ReActStep
 
-# Set up test client
-client = TestClient(app)
 
 # Autouse fixture to isolate memory storage directory for all tests
 @pytest.fixture(autouse=True)

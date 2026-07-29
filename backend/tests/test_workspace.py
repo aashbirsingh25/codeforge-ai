@@ -7,6 +7,11 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.config import settings
+
+client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+
+
 from app.workspace import WorkspaceManager
 from app.tools.exceptions import PathTraversalError, ToolFileNotFoundError, ToolExecutionError
 from app.tools.registry import registry as tool_registry
@@ -192,7 +197,7 @@ def test_project_generation(temp_workspace):
 
 # API endpoints integration tests
 def test_workspace_api_endpoints(temp_workspace):
-    client = TestClient(app)
+
     
     # Test POST /workspace/file
     res = client.post("/api/v1/workspace/file", json={
@@ -352,7 +357,7 @@ def test_workspace_manager_additional_branches(temp_workspace):
 
 
 def test_workspace_api_endpoints_error_mappings(temp_workspace):
-    client = TestClient(app)
+
     
     # GET files path traversal
     res = client.get("/api/v1/workspace/files", params={"path": "../outside"})
@@ -410,7 +415,7 @@ def test_workspace_api_endpoints_error_mappings(temp_workspace):
 
 
 def test_workspace_api_unexpected_exceptions(temp_workspace):
-    client = TestClient(app)
+
     
     # Mock list_files RuntimeError
     with patch("app.workspace.workspace_manager.list_files", side_effect=RuntimeError("Unexpected")):

@@ -5,6 +5,11 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.config import settings
+
+client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+
+
 from app.planner.exceptions import (
     PlanningParseError,
     PlanningValidationError,
@@ -27,7 +32,6 @@ from app.planner.planner import Planner
 from app.planner.service import PlannerService
 from app.llm.schemas import ChatCompletionResponse
 
-client = TestClient(app)
 
 
 # --- 1. Parser Tests ---

@@ -8,6 +8,11 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.config import settings
+
+client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+
+
 from app.core.events import event_publisher
 from app.core.metrics import metrics_tracker
 from app.core.middleware import rate_limiter
@@ -18,7 +23,6 @@ from app.planner.schemas import ExecutionPlan, Task, TaskPriority
 from app.core.config import settings
 from app.agents.schemas import ExecutionRequest, ExecutionResponse, ExecutionState, ReActTrace
 
-client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def setup_test_memory(tmp_path):

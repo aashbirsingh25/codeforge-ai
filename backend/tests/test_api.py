@@ -1,14 +1,36 @@
 from fastapi.testclient import TestClient
 from app.main import app
+from app.core.config import settings
 
-client = TestClient(app)
+client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+
 
 def test_health_check():
-    response = client.get("/api/v1/health")
+    # Test client without auth header to ensure public health endpoint works
+    unauthenticated_client = TestClient(app)
+    response = unauthenticated_client.get("/api/v1/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
     assert "CodeForge AI API" in data["service"]
+
+def test_api_key_auth_missing():
+    unauthenticated_client = TestClient(app)
+    response = unauthenticated_client.get("/api/v1/projects")
+    assert response.status_code == 401
+    assert "Invalid or missing API Key" in response.text
+
+def test_api_key_auth_invalid():
+    bad_client = TestClient(app)
+    bad_client.headers["X-API-Key"] = "wrong-key-123"
+    response = bad_client.get("/api/v1/projects")
+    assert response.status_code == 401
+    assert "Invalid or missing API Key" in response.text
+
+def test_api_key_auth_valid():
+    response = client.get("/api/v1/projects")
+    assert response.status_code == 200
+
 
 def test_placeholder_endpoints():
     # Projects Route
