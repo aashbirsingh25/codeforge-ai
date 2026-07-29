@@ -127,29 +127,19 @@ Monitors host metrics, active executions, LLM completions counters, and process 
 ## Screenshots
 
 ### Dashboard
-Do not invent image names.
+
 
 ### Chat
-Do not invent image names.
+
 
 ### Workspace
-Do not invent image names.
+
 
 ### Memory
-Do not invent image names.
+
 
 ### Metrics
-Do not invent image names.
 
-## Demo
-
-This project currently does not have a public deployment because it requires local filesystem access and API keys for LLM providers.
-
-Demo assets to be added:
-
-*   Application walkthrough video
-*   End-to-end execution demo
-*   Feature showcase GIFs
 
 ## Key Technical Contributions
 
