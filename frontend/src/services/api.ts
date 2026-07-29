@@ -9,9 +9,12 @@ export const setApiKey = (key: string | null) => {
 
 export const getApiKey = (): string | null => currentApiKey;
 
+// Determine API base URL dynamically from environment (Vercel build-time env var) or default to relative path
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+
 // Create central Axios instance targeting the v1 API prefix
 export const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: apiBaseUrl,
   headers: {
     'Content-Type': 'application/json',
   },

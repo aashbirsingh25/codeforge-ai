@@ -57,7 +57,8 @@ class Settings(BaseSettings):
             "GEMINI_API_KEY",
             "OPENAI_API_KEY",
             "API_SECRET_KEY",
-            "CORS_ALLOWED_ORIGINS"
+            "CORS_ALLOWED_ORIGINS",
+            "PORT"
         }
         if name in dynamic_fields:
             if name in os.environ:

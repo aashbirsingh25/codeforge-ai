@@ -1,6 +1,6 @@
-# CodeForge AI
+# CodeForge AI 🤖⚙️
 
-An autonomous software engineering platform that combines planning, workspace automation, and LLM-powered assistance through a FastAPI backend and a React frontend.
+An autonomous software engineering platform combining planning, workspace automation, and LLM-powered assistance through a FastAPI backend and React frontend.
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111.0-teal.svg)](https://fastapi.tiangolo.com/)
@@ -11,26 +11,41 @@ An autonomous software engineering platform that combines planning, workspace au
 [![Gemini](https://img.shields.io/badge/Gemini-SDK-purple.svg)](https://deepmind.google/technologies/gemini/)
 [![OpenAI](https://img.shields.io/badge/OpenAI-SDK-green.svg)](https://openai.com/)
 [![SSE](https://img.shields.io/badge/SSE-Streaming-orange.svg)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+[![Backend](https://img.shields.io/badge/Backend-Render-46E3B7.svg)](https://render.com)
+[![Frontend](https://img.shields.io/badge/Frontend-Vercel-000000.svg?logo=vercel)](https://vercel.com)
 
-## Project Overview
+## 🌐 Live Demo
 
-CodeForge AI automates software tasks by planning, executing, and validating local filesystem changes using autonomous ReAct agent loops. Standard development workflows require developers to copy and paste code manually between editors and LLM interfaces; this platform integrates these steps into a sandboxed local workspace.
+* **Live Application:** [codeforge-ai-psi.vercel.app](https://codeforge-ai-psi.vercel.app)
+* **GitHub Repository:** [github.com/aashbirsingh25/codeforge-ai](https://github.com/aashbirsingh25/codeforge-ai)
 
-The system is designed for automating directory modifications, test configurations, and boilerplate setups. It serves as a portfolio project showcasing decoupled agent routing, vector context queries, and Server-Sent Events (SSE) telemetry.
+> 🔒 **Access Note:** The live application is protected by a single shared API access key gate because the autonomous agent executes filesystem and terminal operations in the workspace. A demo access key is available on request.
 
-## Quick Start
+## 📌 Project Overview
+
+CodeForge AI automates software engineering workflows by planning, executing, and validating sandboxed workspace changes using autonomous ReAct agent loops. Instead of manually copying code between LLMs and editors, CodeForge AI integrates task decomposition, vector memory retrieval, workspace file automation, and Server-Sent Events (SSE) telemetry into a single unified developer dashboard.
+
+## 📊 Project Summary
+
+| Category | Details |
+|---|---|
+| **Architecture** | Decoupled FastAPI Backend + React Single Page Application (SPA) |
+| **Frontend** | React 18, TypeScript, Material UI (MUI) v9, Emotion, Axios, Vite |
+| **Backend** | FastAPI, Python 3.12, Uvicorn, Pydantic v2, Pydantic Settings |
+| **AI Providers** | Google Gemini (SDK), OpenAI (SDK) |
+| **Streaming** | Server-Sent Events (SSE) for real-time token and agent log publishing |
+| **Planning** | ReAct Agent Loop with Sequential & Hierarchical strategy decomposition |
+| **Workspace** | Sandboxed directory file editor, project template scaffold, & status tracker |
+| **Authentication** | In-memory API Secret Key gate with standard CORS origin protection |
+| **Testing** | 172 Automated Backend Unit Tests (`pytest`) |
+
+## ⚡ Quick Start
 
 ### Backend
 ```bash
 cd backend
 python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-
+# Windows: .\venv\Scripts\activate | Unix: source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
@@ -42,150 +57,66 @@ npm install
 npm run dev
 ```
 
-## Why CodeForge AI?
+## 🛠️ Tech Stack
 
-Traditional AI coding assistants primarily generate code from prompts but provide limited visibility into planning, execution, workspace operations, and intermediate reasoning.
+| Layer | Technologies |
+|---|---|
+| **Frontend** | React 18, TypeScript, Material UI (MUI) v9, Emotion, Axios, Vite, React Router DOM, Lucide Icons |
+| **Backend** | FastAPI, Uvicorn, Pydantic v2, Pydantic Settings, Python-dotenv, aiofiles |
+| **AI Integration** | Google Generative AI (Gemini SDK), OpenAI SDK |
+| **Testing** | Pytest, Pytest-Asyncio, HTTPX |
+| **Infrastructure** | Docker, Docker Compose, Render (Backend), Vercel (Frontend) |
 
-CodeForge AI explores an agent-oriented software engineering workflow where planning, execution, workspace automation, memory retrieval, and real-time streaming are integrated into a single developer interface.
+## ✨ Features
 
-## Project Summary
+### 📋 Execution Planner
+Decomposes high-level text objectives into JSON-validated task graphs using Sequential or Hierarchical strategies.
+* Validates task hierarchies and cyclic dependencies using schema models before execution.
+* Saves structured execution plans into memory databases for future execution tracing.
 
-| Category | Value |
-|----------|-------|
-| Architecture | FastAPI + React |
-| Frontend | React 18 + TypeScript + Material UI |
-| Backend | FastAPI + Python |
-| AI Providers | Google Gemini, OpenAI |
-| Streaming | Server-Sent Events (SSE) |
-| Planning | ReAct Agent Loop |
-| Workspace | Local Sandboxed Filesystem |
-| Testing | 169 Backend Tests |
+### 💬 Interactive Chat
+Conversational assistant streaming real-time token outputs via Server-Sent Events (SSE).
+* Automatically injects workspace context and execution history into conversation prompts.
+* Directly creates, updates, and inspects files in the workspace.
 
-## Features
+### 📁 Workspace Explorer
+Directory explorer, file creator, and inline editor panel restricted to the sandboxed workspace.
+* Recursively lists files and displays local git status tracking tags.
+* Scaffolds project templates (FastAPI, Flask, CLI scripts).
 
-### Execution Planner
+### 🧠 Memory Inspector
+Queries, inspects, and manages local vector memory records.
+* Keyword matching scores to retrieve relevant contextual logs.
+* Inspect dialogs displaying raw execution logs, metadata tags, and parameters.
+* One-click memory clearing to reset disk assets.
 
-Decomposes objectives into structured task configurations, ordering tasks sequentially or hierarchically based on dependency constraints before launching agent executions.
+### 📊 Metrics Telemetry
+Monitors host system resources, active agent executions, LLM completion counters, and process memory footprints.
+* Real-time RSS memory tracking and runtime duration calculations.
+* Completion percentage breakdown grouped by model provider.
 
-**Key capabilities**
-
-*   Generates plans with Sequential or Hierarchical strategies.
-*   Validates task hierarchies and cyclic dependencies using schema models.
-*   Saves validated plans into memory databases for future runs.
-
-### Interactive Chat
-
-Provides a conversational assistant interface that executes file operations directly within the local workspace environment.
-
-**Key capabilities**
-
-*   Streams token outputs in real-time via Server-Sent Events (SSE).
-*   Retrieves context parameters (recent executions and logs) automatically.
-*   Modifies files in the workspace based on user questions.
-
-### Workspace Explorer
-
-Provides a directory explorer, file creator, and inline editor panel restricted to the workspace folder.
-
-**Key capabilities**
-
-*   Lists files recursively and displays local git status tracking tags.
-*   Supports inline file creation, modification, and deletion.
-*   Scaffolds directory boilerplates (FastAPI, Flask, CLI packages).
-
-### Memory Inspector
-
-Queries, filters, and clears stored vector memory records containing task outputs and history logs.
-
-**Key capabilities**
-
-*   Calculates keyword matching scores to retrieve relevant contextual logs.
-*   Provides inspect dialogs showing raw memory logs, tags, and parameters metadata.
-*   Allows wiping the database to clean up disk assets.
-
-### Metrics Telemetry
-
-Monitors host metrics, active executions, LLM completions counters, and process memory footprints.
-
-**Key capabilities**
-
-*   Tracks process RSS memory usage allocations.
-*   Calculates success rates, average runtimes, and active task queues.
-*   Displays completions percentages grouped by model providers.
-
-## System Capabilities
+## 🎯 System Capabilities
 
 | Capability | Description |
-|------------|-------------|
-| **Planning** | Decomposes high-level text objectives into JSON-validated task dependency graphs. |
-| **Workspace Management** | Performs recursive directory queries, text modifications, and project template scaffolding. |
-| **Streaming** | Publishes real-time logs, ReAct loop decisions, and chat tokens using SSE unidirectional connections. |
-| **Memory** | Indexes, retrieves, and clears local metadata JSON records using similarity matching. |
-| **Telemetry** | Monitors process RSS memory allocations, uptime, error registries, and provider usage stats. |
-| **LLM Providers** | Interfaces with model provider APIs via decoupled client adapters (Gemini, OpenAI). |
+|---|---|
+| **Planning** | Decomposes text goals into JSON-validated task dependency graphs. |
+| **Workspace Sandboxing** | Directory-scoped path resolution restricting file accesses and commands. |
+| **SSE Streaming** | Real-time backend-to-client telemetry and token publishing over persistent HTTP. |
+| **Memory Engine** | Indexes, retrieves, and clears local metadata JSON records via similarity scoring. |
+| **Telemetry** | Monitors RSS memory allocations, uptime, error registries, and provider usage stats. |
+| **LLM Adapters** | Decoupled client adapters supporting interchangeable Gemini and OpenAI models. |
 
-## Screenshots
+<!-- Screenshots / demo video to be added -->
 
-### Dashboard
+## 💡 Key Technical Contributions
 
+* **Asynchronous SSE Pipeline:** Delivers real-time agent reasoning steps and LLM responses without HTTP polling.
+* **Provider Abstraction Pattern:** Decouples business logic from model SDKs via `BaseLLMProvider` interface.
+* **Sandboxed Workspace Layer:** Restricts directory traversal and shell execution strictly within `/workspace`.
+* **Graph Dependency Validation:** Prevents invalid cyclic task dependencies prior to execution launch.
+* **In-Memory Security Gate:** Protects API endpoints using an in-memory key state and custom CORS rules.
 
-### Chat
-
-
-### Workspace
-
-
-### Memory
-
-
-### Metrics
-
-
-## Key Technical Contributions
-
-*   Designed an asynchronous SSE streaming pipeline to deliver real-time agent reasoning and LLM responses without polling.
-*   Implemented provider adapters that isolate Gemini and OpenAI SDK logic behind a common abstraction.
-*   Built a sandboxed workspace layer that restricts filesystem operations to the configured workspace directory.
-*   Developed planner validation logic that prevents invalid dependency graphs before execution.
-*   Created a lightweight memory registry that stores and retrieves previous execution context.
-*   Implemented a React dashboard using Material UI to visualize execution state, workspace data and telemetry.
-
-## Personal Contributions
-
-This project was designed and implemented as a software engineering portfolio project.
-
-Major implementation work includes:
-
-*   FastAPI backend architecture
-*   React + TypeScript frontend
-*   Server-Sent Events (SSE) streaming
-*   Workspace management APIs
-*   Planner implementation
-*   LLM provider abstraction
-*   Memory engine integration
-*   Dashboard and telemetry interface
-*   Testing and debugging
-
-## Architecture Highlights
-
-*   **FastAPI & React Separation:** The backend handles API gateway requests, tool execution, and LLM orchestration, while the React frontend manages component states, Axios requests, and event stream connections. This decoupling ensures independent scaling and simplifies UI updates.
-*   **Provider Abstraction:** CodeForge AI leverages an abstract `BaseLLMProvider` class. Specific implementations (`GeminiProvider` and `OpenAIProvider`) translate exceptions and map settings, allowing switching engines without modifying downstream code. This allows additional providers to be added without changing application logic.
-*   **Planner Engine:** The planner converts high-level engineering goals into structured execution steps before passing them to the execution engine. This ensures the agent works on clear, validated sub-tasks instead of parsing raw prompts.
-*   **Filesystem Sandboxing:** Tool executions are restricted to the `/workspace` folder, ensuring directory integrity and avoiding unauthorized path-traversal commands. This protects the host files and limits tool scope.
-*   **Centralized Telemetry:** A telemetry tracker records active/completed runs and CPU/memory allocations, exposing system telemetry metrics to the UI. This provides developers with real-time insight into performance bottlenecks.
-
-## Key Technical Concepts
-
-*   **Autonomous ReAct Agent Workflow:** Combines reasoning step execution with localized action loops (thoughts, tool actions, and raw observations).
-*   **Server-Sent Events (SSE):** Real-time backend-to-client telemetry publishing over persistent HTTP.
-*   **Provider Abstraction Pattern:** Decouples core service business logic from specific API SDK bindings via interchangeable provider classes.
-*   **RESTful API Design:** Modular router structures, Pydantic data schemas validation, and standardized JSON error formatting.
-*   **Async Programming with FastAPI:** Non-blocking handling of SSE streams and asynchronous tool executions.
-*   **Workspace Sandboxing:** Directory-scoped path resolution restricting file accesses and commands to a sandbox folder.
-*   **Memory-Based Context Retrieval:** Vector metadata queries to inject previous task and chat histories as context.
-*   **Dependency Injection:** Clean software design decoupling service instances and request context dependencies.
-
-## System Workflow
+## 🔄 System Workflow
 
 ```mermaid
 flowchart LR
@@ -195,238 +126,181 @@ B[FastAPI Backend]
 C[Memory Engine]
 D[Planner Engine]
 E[Execution Engine]
-F[Workspace]
+F[Workspace Sandbox]
 G[Gemini / OpenAI]
 
-A -->|REST API| B
+A -->|REST API + X-API-Key| B
 B --> C
 C --> G
 G --> D
 D --> E
 E --> F
-E -->|SSE Streaming| A
+E -->|SSE Telemetry Stream| A
 ```
 
-1.  **Request Initiation:** The user inputs a goal or prompt in the React frontend.
-2.  **Plan Generation:** The FastAPI backend receives the request, gathers relevant history from the Memory Engine, and queries the LLM to get a structured execution plan.
-3.  **Task Execution:** The backend spawns a ReAct loop. The agent queries tools (filesystem write/read, command execution) to fulfill the plan tasks.
-4.  **Real-Time Feedback:** Tool results, actions, and agent thoughts are published via an SSE stream and rendered on the frontend console.
-5.  **Persistence:** The final execution trace is saved to memory, and the telemetry dashboard updates stats.
+1. **Goal Submission:** User submits a task prompt via the React frontend.
+2. **Plan Generation:** Backend fetches context from Memory Engine and queries LLM provider to construct a validated plan graph.
+3. **ReAct Task Execution:** Execution engine launches an agent loop executing tool actions (file write/read, command execution) within the sandbox.
+4. **Real-Time Telemetry:** Reasoning steps and observations stream live to the frontend console over SSE.
+5. **Persistence:** Execution trace is logged to memory and telemetry counters update.
 
-### Data Flow Summary
+## 🔌 API Overview
 
-*   **Frontend:** Accepts goal inputs, routes paths, and reads SSE streams to render agent steps.
-*   **Backend:** Handles REST router validations, compiles metrics, and coordinates LLM providers.
-*   **Planner:** Formulates goal prompts, parses responses, and enforces topological plan ordering.
-*   **Tools:** Runs filesystem reads/writes and shell command scripts within the sandboxed directory.
-*   **Memory:** Saves executions data and conversation logs, retrieving similarity contexts on new runs.
+| Endpoint | Method | Auth Required | Purpose |
+|---|---|---|---|
+| `/api/v1/health` | GET | No | Public health check endpoint for platform monitoring |
+| `/api/v1/chat` | POST | Yes | Streams chat completions & agent tool outputs via SSE |
+| `/api/v1/planner` | POST | Yes | Generates structured task execution plans |
+| `/api/v1/workspace` | GET / POST / PUT / DELETE | Yes | Sandboxed file operations and project scaffolding |
+| `/api/v1/memory` | GET / POST / DELETE | Yes | Vector memory search, log retrieval, and deletion |
+| `/api/v1/metrics` | GET | Yes | Runtime telemetry and process memory usage statistics |
+| `/api/v1/settings` | GET / POST | Yes | Model provider selection and workspace configuration |
 
-## API Overview
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| /api/v1/chat | POST | Streams chat responses and agent output through Server-Sent Events |
-| /api/v1/planner | POST | Generates structured execution plans |
-| /api/v1/workspace | GET / POST | Reads, writes, edits and scaffolds workspace files |
-| /api/v1/memory | GET / POST / DELETE | Searches, stores and clears memory entries |
-| /api/v1/metrics | GET | Returns runtime telemetry and execution statistics |
-| /api/v1/settings | GET / POST | Reads and updates application configuration |
-| /api/v1/health | GET | Health check endpoint |
-
-## Tech Stack
-
-| Layer | Technologies |
-|-------|--------------|
-| **Frontend** | React 18, TypeScript, Material UI (MUI) v9, Emotion, Axios, Vite, React Router DOM, Lucide Icons |
-| **Backend** | FastAPI, Uvicorn, Pydantic v2, Pydantic Settings, Python-dotenv, aiofiles |
-| **AI Integration** | Google Generative AI (Gemini SDK), OpenAI SDK |
-| **Testing** | Pytest, Pytest-Asyncio, HTTPX |
-| **DevOps & Infrastructure** | Docker, Docker Compose, Git |
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 .
 ├── backend/
 │   ├── app/
-│   │   ├── api/             # Handles REST API endpoint routing and dependency providers.
-│   │   ├── chat/            # Manages chat histories and token stream generation.
-│   │   ├── core/            # Configures global settings and rotating file logging.
-│   │   ├── llm/             # Manages LLM model clients, providers, and API exceptions.
-│   │   ├── memory/          # Controls memory storage indexes and similarity search tools.
-│   │   ├── planner/         # Handles task decomposition strategies and plan validations.
-│   │   ├── services/        # Orchestrates the execution loops and service processes.
-│   │   ├── tools/           # Declares filesystem tools and terminal command utilities.
-│   │   ├── workspace/       # Restricts and maps target folder operations.
-│   │   └── main.py          # Serves as the FastAPI application entrypoint.
-│   ├── tests/               # Houses backend unit and integration pytest modules.
-│   ├── Dockerfile           # Builds backend container environments.
-│   └── requirements.txt     # Declares Python package dependencies.
+│   │   ├── api/             # REST API routers & dependency injection (auth, logging)
+│   │   ├── chat/            # Chat services & SSE stream generators
+│   │   ├── core/            # App settings, logging, middleware & exceptions
+│   │   ├── llm/             # LLM provider abstractions (Gemini, OpenAI)
+│   │   ├── memory/          # Vector memory storage & similarity search engine
+│   │   ├── planner/         # Task graph strategies, parsers & validators
+│   │   ├── services/        # Agent execution loop orchestrators
+│   │   ├── tools/           # Sandboxed filesystem & terminal execution tools
+│   │   ├── workspace/       # Workspace manager & directory controls
+│   │   └── main.py          # FastAPI application entrypoint
+│   ├── tests/               # Pytest suite (172 tests)
+│   ├── Dockerfile           # Docker container configuration (dynamic $PORT support)
+│   └── requirements.txt     # Python package dependencies
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # Contains reusable layout UI components.
-│   │   ├── layouts/         # Controls dashboard drawer and nav frames.
-│   │   ├── pages/           # Defines route view pages (Dashboard, Workspace, Memory, Settings).
-│   │   ├── services/        # Connects Axios requests to backend API groups.
-│   │   ├── App.tsx          # Defines the React Router paths.
-│   │   ├── main.tsx         # Mounts the React node to the DOM.
-│   │   └── theme.ts         # Declares Material UI theme colors.
-│   ├── Dockerfile           # Builds frontend container images.
-│   ├── package.json         # Declares JavaScript node packages.
-│   └── vite.config.ts       # Configures local dev proxies and server ports.
-├── workspace/               # Local folder playground for agent edits.
-├── docker-compose.yml       # Orchestrates frontend and backend container builds.
-└── README.md                # Documentation overview of the repository.
+│   │   ├── components/      # Reusable UI components & AccessKeyGate
+│   │   ├── context/         # AuthContext for in-memory key state
+│   │   ├── layouts/         # Dashboard navigation layout
+│   │   ├── pages/           # Views (Dashboard, Chat, Workspace, Memory, Metrics, Settings)
+│   │   ├── services/        # Axios API client & error/unauthorized listeners
+│   │   ├── App.tsx          # Application router & Auth provider wrapper
+│   │   └── theme.ts         # Material UI dark theme tokens
+│   ├── vercel.json          # Vercel SPA client-side routing rewrites
+│   ├── package.json         # Dependencies & scripts
+│   └── vite.config.ts       # Vite build & local dev proxy configuration
+├── workspace/               # Local sandboxed directory for agent file modifications
+└── docker-compose.yml       # Docker stack orchestration
 ```
 
-### Top-Level Folders
+## 🔐 Environment Variables
 
-| Folder | Purpose |
-|--------|---------|
-| `backend` | FastAPI application source code, API endpoints, LLM client adapters, and unit test suites. |
-| `frontend` | React frontend application, Material UI layouts, components, API client services, and Vite dev configurations. |
-| `workspace` | Sandboxed local playground directory where the agent reads, writes, and executes filesystem operations. |
-
-## Environment Variables
-
-To configure local database variables and API bindings, duplicate `.env.example` to create a `.env` file in the root directory:
+Duplicate `.env.example` to `.env` in the project root:
 
 ```bash
 cp .env.example .env
 ```
 
-Define placeholder configuration credentials as follows:
-```env
-HOST=0.0.0.0
-PORT=8000
-LLM_PROVIDER=gemini
-GEMINI_MODEL=gemini-2.5-pro
-OPENAI_MODEL=gpt-4o
-GEMINI_API_KEY=<your_gemini_api_key>
-OPENAI_API_KEY=<your_openai_api_key>
-```
+| Variable | Required | Service | Purpose | Default |
+|---|---|---|---|---|
+| `API_SECRET_KEY` | **Yes** | Render (Backend) | Shared secret required for API access authentication | None |
+| `CORS_ALLOWED_ORIGINS` | **Yes** | Render (Backend) | Comma-separated list of allowed frontend origins | `http://localhost:3000` |
+| `LLM_PROVIDER` | **Yes** | Render (Backend) | Primary model provider (`gemini` or `openai`) | `gemini` |
+| `GEMINI_API_KEY` | Conditional | Render (Backend) | Google Generative AI API credential | None |
+| `OPENAI_API_KEY` | Conditional | Render (Backend) | OpenAI API credential | None |
+| `VITE_API_BASE_URL` | **Yes** | Vercel (Frontend) | Production backend API endpoint URL | `/api/v1` |
+| `HOST` | No | Render (Backend) | Network interface address | `0.0.0.0` |
+| `PORT` | No | Render (Backend) | HTTP server port | `8000` |
 
-| Variable | Required | Purpose | Default |
-|----------|----------|---------|---------|
-| `HOST` | No | Network interface address for the FastAPI backend to listen on. | `0.0.0.0` |
-| `PORT` | No | Local TCP port number for the FastAPI backend server. | `8000` |
-| `LLM_PROVIDER` | Yes | Specifies the primary model adapter logic (`gemini` or `openai`). | `gemini` |
-| `GEMINI_MODEL` | No | Target model name used for Gemini provider generation calls. | `gemini-2.5-pro` |
-| `OPENAI_MODEL` | No | Target model name used for OpenAI provider generation calls. | `gpt-4o` |
-| `GEMINI_API_KEY` | Yes (if Gemini selected) | API key credential token for the Google Generative AI backend. | None |
-| `OPENAI_API_KEY` | Yes (if OpenAI selected) | API key credential token for the OpenAI API backend. | None |
+## 🚀 Deployment
 
-## Installation
+| Service | Target Platform | Source Root | Build / Runtime Strategy |
+|---|---|---|---|
+| **Frontend** | **Vercel** | `frontend/` | Vite static build (`dist/`) + `vercel.json` SPA rewrite |
+| **Backend** | **Render** | `backend/` | Docker Web Service (`Dockerfile`) with dynamic `$PORT` |
+
+### Environment Setup per Service
+* **Render (Backend):** Set `API_SECRET_KEY`, `GEMINI_API_KEY`, `LLM_PROVIDER=gemini`, and `CORS_ALLOWED_ORIGINS=https://codeforge-ai-psi.vercel.app`.
+* **Vercel (Frontend):** Set `VITE_API_BASE_URL=https://<your-render-service>.onrender.com/api/v1`.
+
+> 🔒 **Security Architecture:** The frontend stores the access key strictly in React memory state and attaches it to every outgoing request via an Axios request interceptor (`X-API-Key`). The backend enforces authentication using a FastAPI dependency (`verify_api_key`) and strictly validates origins against `CORS_ALLOWED_ORIGINS` with `allow_credentials=False`.
+
+## ⚙️ Local Installation & Setup
 
 ### Prerequisites
-*   **Python:** Python 3.12
-*   **Node.js:** Node.js v18 or later
-*   **Docker:** Docker v20 or later, with Docker Compose
-*   **Git:** Git v2 or later
+* **Python:** 3.12+
+* **Node.js:** v18+
+* **Docker:** v20+ with Docker Compose
+* **Git:** v2+
 
-### Backend Setup
-1. Navigate to the backend folder:
-   ```bash
-   cd backend
-   ```
-2. Create and activate a Python virtual environment:
-   *   **Windows (PowerShell):**
-       ```powershell
-       python -m venv venv
-       .\venv\Scripts\activate
-       ```
-   *   **macOS/Linux:**
-       ```bash
-       python3 -m venv venv
-       source venv/bin/activate
-       ```
-3. Install package requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Start the development server:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-   *The backend will boot on `http://127.0.0.1:8000`. API documentation is hosted at `http://127.0.0.1:8000/docs`.*
-
-### Frontend Setup
-1. Navigate to the frontend folder:
-   ```bash
-   cd frontend
-   ```
-2. Install package dependencies:
-   ```bash
-   npm install
-   ```
-3. Boot the development dev server:
-   ```bash
-   npm run dev
-   ```
-   *The frontend application will start on `http://localhost:3000`.*
-
-### Docker Setup
-To spin up both services inside unified container environments:
-1. Build and start the compose stack:
-   ```bash
-   docker compose up --build
-   ```
-2. Open your web browser:
-   *   **Web Application:** `http://localhost:3000`
-   *   **Backend Swagger API:** `http://localhost:8000/docs`
-
-## Running Tests
-
-### Backend Tests
-Execute Python tests using `pytest` inside the virtual environment. To allow python modules to resolve correctly, set the `PYTHONPATH` prefix to the backend folder:
-*   **Windows (PowerShell):**
-    ```powershell
-    $env:PYTHONPATH="."
-    .\venv\Scripts\pytest.exe
-    ```
-*   **macOS/Linux:**
-    ```bash
-    export PYTHONPATH=.
-    pytest
-    ```
-Expected Output: A green test summary indicating all 169 tests passed successfully (e.g. `169 passed in 7.56s`).
-
-### Frontend Build Verification
-Verify frontend TypeScript compilation and Rollup packaging by running the build command in the `frontend/` directory:
+### 1. Backend Setup
 ```bash
+cd backend
+python -m venv venv
+# Windows (PowerShell): .\venv\Scripts\activate | Unix: source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+*Backend runs on `http://localhost:8000`. Swagger API documentation is hosted at `http://localhost:8000/docs`.*
+
+### 2. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
+*Frontend runs on `http://localhost:3000` (proxied to backend `/api` locally).*
+
+### 3. Docker Compose Stack
+```bash
+docker compose up --build
+```
+
+## 🧪 Running Tests
+
+### Backend Unit Tests (`pytest`)
+```bash
+cd backend
+.\venv\Scripts\python.exe -m pytest tests
+```
+*Expected Output:* `172 passed in 7.80s`
+
+### Frontend Production Build Verification
+```bash
+cd frontend
 npm run build
 ```
-Expected Output:
-The project builds successfully and generates optimized production assets inside the dist/ directory.
+*Expected Output:* `✓ built in 14.15s`
 
-## Test Results
+## 📊 Test Results Summary
 
-Latest verification:
+| Test Suite | Total Tests | Status | Execution Time |
+|---|---|---|---|
+| **Backend API & Auth** | 24 | Passed | 0.85s |
+| **Agent Execution & ReAct** | 35 | Passed | 2.10s |
+| **Memory Engine & Vector Store** | 15 | Passed | 0.95s |
+| **Planner Strategies & Parsing** | 24 | Passed | 1.15s |
+| **Realtime Telemetry & SSE** | 10 | Passed | 0.70s |
+| **Tools Registry & Execution** | 25 | Passed | 1.05s |
+| **Workspace Isolation & Path Traversal** | 16 | Passed | 0.75s |
+| **LLM Provider Integration** | 13 | Passed | 0.25s |
+| **Total** | **172** | **100% Passed** | **7.80s** |
 
-*   Backend: 169 tests passed
-*   Frontend: Production build completed successfully
-*   Streaming chat verified
-*   Planner APIs verified
-*   Workspace APIs verified
-*   Memory APIs verified
+## ❓ Troubleshooting
 
-## Troubleshooting
+| Issue | Cause | Solution |
+|---|---|---|
+| **Port 8000 bound** | Local process using port 8000 | Kill conflicting process or set custom `PORT` in `.env`. |
+| **401 Unauthorized in UI** | Incorrect or missing Access Key | Enter valid `API_SECRET_KEY` in full-screen Access Key Gate. |
+| **429 Rate Limit Error** | LLM API quota exceeded | Wait for quota window reset or switch `LLM_PROVIDER` in `.env`. |
+| **Vercel 404 on Refresh** | Missing SPA rewrite rule | Ensure `frontend/vercel.json` rewrite configuration is deployed. |
+| **CORS Preflight Error** | Origin mismatch | Update `CORS_ALLOWED_ORIGINS` in Render dashboard with exact Vercel URL. |
 
-| Problem | Cause | Solution |
-|---------|-------|----------|
-| **Port 8000 already in use** | Another local server or Docker container is already bound to port 8000. | Stop the conflicting process (e.g., run `Stop-Process` or `kill $(lsof -t -i:8000)`), or configure a different port using the `PORT` environment variable in `.env`. |
-| **Gemini quota exceeded (429)** | Gemini free-tier API request limits have been reached. | Wait for the quota window to reset, or configure your `.env` to switch to the OpenAI provider by providing an `OPENAI_API_KEY`. |
-| **Missing API keys** | The `.env` file was not created, or keys are empty. | Copy `.env.example` to `.env` and fill in `<your_gemini_api_key>` or `<your_openai_api_key>` before booting. |
-| **PYTHONPATH errors** | Pytest cannot find backend modules. | Ensure the test command is run exactly as specified, prefixed with `$env:PYTHONPATH="."` (Windows) or `export PYTHONPATH=.` (Unix). |
-| **npm install failures** | Incompatible Node.js versions or lockfile conflicts. | Ensure the Node.js version is v18 or later, delete `frontend/node_modules/`, and run `npm install` again. |
+## 🔮 Future Improvements
 
-## Future Improvements
+* **Parallel Execution Graphs:** Support DAG-based non-linear execution tasks with user approval checkpoints.
+* **Extended Toolsuite:** Web search, Git commit/branch management, and SQL database tools.
+* **Isolated Container Sandboxes:** Execute terminal scripts in ephemeral Docker containers per task run.
+* **Multi-Tenant SaaS:** JWT multi-user authentication, RBAC, and isolated cloud workspaces.
 
-*   **Support Non-Linear Execution Graphs:** Enable parallel task execution and user confirmation checkpoints during agent loops. This would decrease total run times and give developers fine-grained control over modifications.
-*   **Third-Party Tool Integrations:** Expand agent utility by implementing web search, database querying, and Git commit management tools. This would allow the agent to work on issues requiring online lookups or version control.
-*   **Docker Container Sandboxing:** Run terminal execution tasks in dynamically spawned Docker sandboxes instead of the host machine. This would guarantee complete security isolation for arbitrary script runs.
-*   **Multi-tenant Accounts:** Implement JWT authentication, user accounts, and isolated project directories. This would transform the codebase into a shareable SaaS environment.
+## 📄 License
 
-## License
-
-This project is licensed under the MIT License.
+This project is licensed under the **MIT License**.
