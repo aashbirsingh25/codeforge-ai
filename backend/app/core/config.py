@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: int = 60
 
 
+    # Redis Caching Settings
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
     # API Secret Key Authentication
     API_SECRET_KEY: str
 
@@ -58,6 +61,7 @@ class Settings(BaseSettings):
             "OPENAI_API_KEY",
             "API_SECRET_KEY",
             "CORS_ALLOWED_ORIGINS",
+            "REDIS_URL",
             "PORT"
         }
         if name in dynamic_fields:

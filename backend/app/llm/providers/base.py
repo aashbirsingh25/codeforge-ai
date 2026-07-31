@@ -7,11 +7,25 @@ class BaseLLMProvider(ABC):
     Abstract Base Class defining the contract for all LLM providers in CodeForge AI.
     """
     
-    @abstractmethod
     async def generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         """
         Send a chat completion request to the provider and return a static response.
+        Checks and sets Redis cache for deterministic requests (temperature == 0).
         """
+        from app.llm.cache import llm_cache
+        
+        cached_response = await llm_cache.get(request)
+        if cached_response is not None:
+            return cached_response
+
+        response = await self._generate(request)
+
+        await llm_cache.set(request, response)
+        return response
+
+    @abstractmethod
+    async def _generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+        """Subclass implementation of LLM generation."""
         pass
 
     @abstractmethod

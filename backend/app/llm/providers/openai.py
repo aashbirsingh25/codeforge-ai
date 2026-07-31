@@ -110,7 +110,7 @@ class OpenAIProvider(BaseLLMProvider):
         return response is not None
 
     @translate_exceptions
-    async def generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         if not self.client:
             raise LLMAuthenticationException("OpenAI provider API key is not configured.")
         from app.core.config import settings

@@ -8,7 +8,7 @@ from app.llm.factory import ProviderFactory
 from app.llm.providers.gemini import GeminiProvider
 from app.llm.providers.openai import OpenAIProvider
 from app.llm.providers.base import BaseLLMProvider
-from app.llm.schemas import ChatCompletionRequest, ChatMessage, GenerationConfig
+from app.llm.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatMessage, GenerationConfig
 from app.llm.exceptions import (
     LLMException,
     LLMAuthenticationException,
@@ -309,3 +309,110 @@ async def test_openai_health_check_validation_failure():
             await provider.health_check()
         assert "is not found or unsupported" in str(excinfo.value)
         assert "gpt-3.5-turbo" in str(excinfo.value)
+
+
+# ==========================================
+# 5. Redis LLM Caching Tests
+# ==========================================
+
+class FakeRedisClient:
+    def __init__(self):
+        self.store = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, val, ex=None):
+        self.store[key] = val
+
+
+@pytest.mark.asyncio
+async def test_llm_cache_hit_temperature_zero():
+    fake_redis = FakeRedisClient()
+    from app.llm.cache import llm_cache
+    with patch.object(llm_cache, "get_client", return_value=fake_redis):
+        provider = GeminiProvider(api_key="test_key")
+        req = ChatCompletionRequest(
+            model="gemini-1.5-flash",
+            messages=[ChatMessage(role="user", content="deterministic prompt")],
+            config=GenerationConfig(temperature=0.0)
+        )
+        
+        mock_response = ChatCompletionResponse(content="cached answer", model="gemini-1.5-flash")
+        
+        with patch.object(provider, "_generate", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = mock_response
+            
+            # First call: cache miss -> calls provider _generate
+            res1 = await provider.generate(req)
+            assert res1.content == "cached answer"
+            assert mock_gen.call_count == 1
+            
+            # Second call with identical input and temp=0: cache hit -> returns without calling provider _generate
+            res2 = await provider.generate(req)
+            assert res2.content == "cached answer"
+            assert mock_gen.call_count == 1  # Provider NOT invoked again!
+
+
+@pytest.mark.asyncio
+async def test_llm_cache_bypassed_for_non_zero_temperature():
+    fake_redis = FakeRedisClient()
+    from app.llm.cache import llm_cache
+    with patch.object(llm_cache, "get_client", return_value=fake_redis):
+        provider = GeminiProvider(api_key="test_key")
+        
+        # 1. Non-zero temperature (0.7)
+        req_temp = ChatCompletionRequest(
+            model="gemini-1.5-flash",
+            messages=[ChatMessage(role="user", content="sampling prompt")],
+            config=GenerationConfig(temperature=0.7)
+        )
+        mock_response = ChatCompletionResponse(content="sampled answer", model="gemini-1.5-flash")
+        
+        with patch.object(provider, "_generate", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = mock_response
+            
+            await provider.generate(req_temp)
+            await provider.generate(req_temp)
+            # Both calls must invoke _generate (no caching when temperature > 0)
+            assert mock_gen.call_count == 2
+
+        # 2. Temperature is None
+        req_none = ChatCompletionRequest(
+            model="gemini-1.5-flash",
+            messages=[ChatMessage(role="user", content="default prompt")]
+        )
+        with patch.object(provider, "_generate", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = mock_response
+            
+            await provider.generate(req_none)
+            await provider.generate(req_none)
+            # Both calls must invoke _generate (no caching when temperature is None)
+            assert mock_gen.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_cache_redis_unreachable_fallback():
+    from app.llm.cache import llm_cache
+    
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(side_effect=Exception("Redis connection error"))
+    mock_redis.set = AsyncMock(side_effect=Exception("Redis connection error"))
+    
+    with patch.object(llm_cache, "get_client", return_value=mock_redis):
+        provider = GeminiProvider(api_key="test_key")
+        req = ChatCompletionRequest(
+            model="gemini-1.5-flash",
+            messages=[ChatMessage(role="user", content="fallback test")],
+            config=GenerationConfig(temperature=0.0)
+        )
+        mock_response = ChatCompletionResponse(content="fallback answer", model="gemini-1.5-flash")
+        
+        with patch.object(provider, "_generate", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = mock_response
+            
+            # Request should succeed cleanly via provider call despite Redis failure
+            res = await provider.generate(req)
+            assert res.content == "fallback answer"
+            assert mock_gen.call_count == 1
+

@@ -133,7 +133,7 @@ class GeminiProvider(BaseLLMProvider):
         return response is not None
 
     @translate_exceptions
-    async def generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
+    async def _generate(self, request: ChatCompletionRequest) -> ChatCompletionResponse:
         from app.core.config import settings
         if request.model not in self.SUPPORTED_MODELS and request.model != settings.GEMINI_MODEL:
             raise LLMUnsupportedModelException(f"Model '{request.model}' is not supported by Gemini.")
