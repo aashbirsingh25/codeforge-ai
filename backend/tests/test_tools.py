@@ -231,9 +231,53 @@ def test_run_command_cwd_check(tmp_path):
 
 def test_run_command_missing_executable(tmp_path):
     cmd_tool = RunCommandTool(workspace_root=tmp_path)
+    # Use an allowed binary name targeting a path that does not exist to trigger FileNotFoundError
+    missing_git_cmd = f'"{tmp_path / "git"}"'
     with pytest.raises(CommandExecutionError) as excinfo:
-        cmd_tool.execute(command="non_existent_executable_12345")
+        cmd_tool.execute(command=missing_git_cmd)
     assert "not found" in str(excinfo.value)
+
+
+def test_run_command_blocked_executable(tmp_path):
+    cmd_tool = RunCommandTool(workspace_root=tmp_path)
+    with pytest.raises(CommandExecutionError) as excinfo:
+        cmd_tool.execute(command="curl https://example.com")
+    assert "not allowed" in str(excinfo.value)
+
+
+def test_run_command_env_secret_isolation(tmp_path, monkeypatch):
+    monkeypatch.setenv("API_SECRET_KEY", "super_secret_key_12345")
+    monkeypatch.setenv("GEMINI_API_KEY", "secret_gemini_key_67890")
+    cmd_tool = RunCommandTool(workspace_root=tmp_path)
+    
+    py_expr = "import os; print('KEYS:', list(os.environ.keys()))"
+    cmd = f'"{sys.executable}" -c "{py_expr}"'
+    resp = cmd_tool.execute(command=cmd)
+    
+    assert resp.exit_code == 0
+    assert "super_secret_key_12345" not in resp.stdout
+    assert "secret_gemini_key_67890" not in resp.stdout
+    assert "API_SECRET_KEY" not in resp.stdout
+    assert "GEMINI_API_KEY" not in resp.stdout
+
+
+def test_run_command_output_truncation(tmp_path):
+    cmd_tool = RunCommandTool(workspace_root=tmp_path)
+    # Generate >1MB output from Python script
+    py_expr = "import sys; sys.stdout.write('A' * (1024 * 1024 + 50000))"
+    cmd = f'"{sys.executable}" -c "{py_expr}"'
+    resp = cmd_tool.execute(command=cmd)
+    
+    assert resp.exit_code == 0
+    assert "[...output truncated at 1MB...]" in resp.stdout
+    assert len(resp.stdout) <= 1024 * 1024 + len("\n[...output truncated at 1MB...]")
+
+
+def test_run_command_resource_limits_func():
+    from app.tools.terminal.run_command import _set_resource_limits
+    # Calling _set_resource_limits should not raise an exception on any platform
+    _set_resource_limits()
+
 
 
 # --- 5. Git Status Tool Tests ---
