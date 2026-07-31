@@ -30,11 +30,6 @@ def _set_resource_limits():
         # RLIMIT_FSIZE: 50MB
         fsize_bytes = 50 * 1024 * 1024
         resource.setrlimit(resource.RLIMIT_FSIZE, (fsize_bytes, fsize_bytes))
-        # RLIMIT_NPROC: 20 processes
-        try:
-            resource.setrlimit(resource.RLIMIT_NPROC, (20, 20))
-        except (ValueError, OSError):
-            pass
     except ImportError:
         pass
 
