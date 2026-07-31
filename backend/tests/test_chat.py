@@ -11,9 +11,9 @@ from app.memory.store import MemoryStore
 from app.memory.manager import MemoryManager
 from app.llm.exceptions import LLMException
 
-from app.core.config import settings
+from tests.conftest import TEST_AUTH_HEADERS
 
-client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+client = TestClient(app, headers=TEST_AUTH_HEADERS)
 
 
 

@@ -7,9 +7,9 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.core.config import settings
+from tests.conftest import TEST_AUTH_HEADERS
 
-client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+client = TestClient(app, headers=TEST_AUTH_HEADERS)
 
 from app.agents.exceptions import (
     AgentExecutionError,

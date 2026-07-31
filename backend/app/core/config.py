@@ -42,8 +42,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://codeforge:codeforge@localhost:5432/codeforge")
 
-    # API Secret Key Authentication
+    # API Secret Key & JWT Authentication Settings
     API_SECRET_KEY: str
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
     # CORS Allowed Origins (Comma-separated string)
     CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
@@ -61,6 +64,9 @@ class Settings(BaseSettings):
             "GEMINI_API_KEY",
             "OPENAI_API_KEY",
             "API_SECRET_KEY",
+            "JWT_SECRET_KEY",
+            "JWT_ALGORITHM",
+            "ACCESS_TOKEN_EXPIRE_MINUTES",
             "CORS_ALLOWED_ORIGINS",
             "REDIS_URL",
             "DATABASE_URL",

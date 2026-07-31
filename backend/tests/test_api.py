@@ -1,8 +1,17 @@
+import uuid
+from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
+
 from app.main import app
 from app.core.config import settings
+from app.core.security import create_access_token, hash_password
+from app.core.auth import get_current_user
+from app.api.v1.endpoints.auth import get_db_session
+from app.db.models import User
+from tests.conftest import TEST_AUTH_HEADERS, TEST_USER
 
-client = TestClient(app, headers={"X-API-Key": settings.API_SECRET_KEY})
+client = TestClient(app, headers=TEST_AUTH_HEADERS)
 
 
 def test_health_check():
@@ -14,22 +23,145 @@ def test_health_check():
     assert data["status"] == "healthy"
     assert "CodeForge AI API" in data["service"]
 
-def test_api_key_auth_missing():
+
+def test_jwt_auth_missing():
+    app.dependency_overrides.pop(get_current_user, None)
     unauthenticated_client = TestClient(app)
     response = unauthenticated_client.get("/api/v1/projects")
     assert response.status_code == 401
-    assert "Invalid or missing API Key" in response.text
+    assert "Could not validate credentials" in response.text
 
-def test_api_key_auth_invalid():
+
+def test_jwt_auth_malformed():
+    app.dependency_overrides.pop(get_current_user, None)
     bad_client = TestClient(app)
-    bad_client.headers["X-API-Key"] = "wrong-key-123"
+    bad_client.headers["Authorization"] = "Bearer invalid-malformed-token"
     response = bad_client.get("/api/v1/projects")
     assert response.status_code == 401
-    assert "Invalid or missing API Key" in response.text
+    assert "Could not validate credentials" in response.text
 
-def test_api_key_auth_valid():
+
+def test_jwt_auth_expired():
+    app.dependency_overrides.pop(get_current_user, None)
+    expired_token = create_access_token("test-user-id", expires_delta=timedelta(seconds=-10))
+    expired_client = TestClient(app)
+    expired_client.headers["Authorization"] = f"Bearer {expired_token}"
+    response = expired_client.get("/api/v1/projects")
+    assert response.status_code == 401
+    assert "Could not validate credentials" in response.text
+
+
+def test_jwt_auth_valid():
     response = client.get("/api/v1/projects")
     assert response.status_code == 200
+
+
+def test_signup_success():
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = None
+    mock_db.execute.return_value = mock_result
+    mock_db.commit = AsyncMock()
+    
+    async def mock_refresh(u):
+        u.id = uuid.uuid4()
+    mock_db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+    unauth_client = TestClient(app)
+    res = unauth_client.post(
+        "/api/v1/auth/signup",
+        json={"email": "newuser@example.com", "password": "securepassword123"}
+    )
+    app.dependency_overrides.pop(get_db_session, None)
+
+    assert res.status_code == 201
+    data = res.json()
+    assert "access_token" in data
+    assert data["user"]["email"] == "newuser@example.com"
+
+
+def test_signup_short_password():
+    unauth_client = TestClient(app)
+    res = unauth_client.post(
+        "/api/v1/auth/signup",
+        json={"email": "shortpass@example.com", "password": "short"}
+    )
+    assert res.status_code == 422
+
+
+def test_signup_duplicate_email():
+    existing_user = User(
+        id=uuid.uuid4(),
+        email="existing@example.com",
+        hashed_password=hash_password("password123")
+    )
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = existing_user
+    mock_db.execute.return_value = mock_result
+
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+    unauth_client = TestClient(app)
+    res = unauth_client.post(
+        "/api/v1/auth/signup",
+        json={"email": "existing@example.com", "password": "securepassword123"}
+    )
+    app.dependency_overrides.pop(get_db_session, None)
+
+    assert res.status_code == 400
+    assert "User with this email already exists" in res.text
+
+
+def test_login_success():
+    hashed_pw = hash_password("secretpass123")
+    user = User(
+        id=uuid.uuid4(),
+        email="user@example.com",
+        hashed_password=hashed_pw
+    )
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = user
+    mock_db.execute.return_value = mock_result
+
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+    unauth_client = TestClient(app)
+    res = unauth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@example.com", "password": "secretpass123"}
+    )
+    app.dependency_overrides.pop(get_db_session, None)
+
+    assert res.status_code == 200
+    data = res.json()
+    assert "access_token" in data
+    assert data["user"]["email"] == "user@example.com"
+
+
+def test_login_wrong_password():
+    hashed_pw = hash_password("secretpass123")
+    user = User(
+        id=uuid.uuid4(),
+        email="user@example.com",
+        hashed_password=hashed_pw
+    )
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = user
+    mock_db.execute.return_value = mock_result
+
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+    unauth_client = TestClient(app)
+    res = unauth_client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@example.com", "password": "wrongpassword"}
+    )
+    app.dependency_overrides.pop(get_db_session, None)
+
+    assert res.status_code == 401
+    assert "Incorrect email or password" in res.text
+
 
 
 def test_placeholder_endpoints():
