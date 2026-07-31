@@ -34,7 +34,7 @@ jobs:
 
       - name: Run pytest tests
         working-directory: backend
-        run: pytest
+        run: python -m pytest
 
   frontend-build:
     runs-on: ubuntu-latest
