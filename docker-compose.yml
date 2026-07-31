@@ -1,6 +1,18 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: codeforge_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=codeforge
+      - POSTGRES_PASSWORD=codeforge
+      - POSTGRES_DB=codeforge
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   redis:
     image: redis:7-alpine
     container_name: codeforge_redis
@@ -21,8 +33,10 @@ services:
     environment:
       - WORKSPACE_DIR=/app/workspace
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://codeforge:codeforge@postgres:5432/codeforge
     depends_on:
       - redis
+      - postgres
 
   codeforge-frontend:
     build:
@@ -36,3 +50,7 @@ services:
       - /app/node_modules
     depends_on:
       - codeforge-backend
+
+volumes:
+  postgres_data:
+

@@ -1,18 +1,43 @@
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.middleware import register_middleware
 from app.core.exceptions import register_exception_handlers
 from app.api.v1.router import api_router
+from app.db.base import engine
+
+logger = logging.getLogger("app.main")
 
 # Setup logger configurations
 setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup DB connection health check
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connection verified successfully.")
+    except Exception as e:
+        logger.warning(f"Could not connect to PostgreSQL database: {e}")
+    yield
+    try:
+        await engine.dispose()
+    except Exception:
+        pass
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="2.0.0",
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan
 )
 
 # Parse allowed CORS origins from settings

@@ -38,8 +38,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: int = 60
 
 
-    # Redis Caching Settings
+    # Redis Caching & Database Settings
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://codeforge:codeforge@localhost:5432/codeforge")
 
     # API Secret Key Authentication
     API_SECRET_KEY: str
@@ -62,6 +63,7 @@ class Settings(BaseSettings):
             "API_SECRET_KEY",
             "CORS_ALLOWED_ORIGINS",
             "REDIS_URL",
+            "DATABASE_URL",
             "PORT"
         }
         if name in dynamic_fields:
