@@ -1,15 +1,15 @@
 import axios from 'axios';
 
-// In-memory key storage (never written to localStorage/sessionStorage)
-let currentApiKey: string | null = null;
+// In-memory token storage (never written to localStorage/sessionStorage)
+let currentAccessToken: string | null = null;
 
-export const setApiKey = (key: string | null) => {
-  currentApiKey = key;
+export const setAccessToken = (token: string | null) => {
+  currentAccessToken = token;
 };
 
-export const getApiKey = (): string | null => currentApiKey;
+export const getAccessToken = (): string | null => currentAccessToken;
 
-// Determine API base URL dynamically from environment (Vercel build-time env var) or default to relative path
+// Determine API base URL dynamically from environment or default to relative path
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 // Create central Axios instance targeting the v1 API prefix
@@ -20,10 +20,10 @@ export const api = axios.create({
   },
 });
 
-// Request Interceptor: Attach X-API-Key header to every outgoing request if available
+// Request Interceptor: Attach Authorization Bearer header to every outgoing request if available
 api.interceptors.request.use((config) => {
-  if (currentApiKey) {
-    config.headers['X-API-Key'] = currentApiKey;
+  if (currentAccessToken) {
+    config.headers['Authorization'] = `Bearer ${currentAccessToken}`;
   }
   return config;
 });
@@ -63,7 +63,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      setApiKey(null);
+      setAccessToken(null);
       notifyUnauthorized();
     }
 
@@ -78,6 +78,28 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Auth API endpoints
+export interface UserPayload {
+  id: string;
+  email: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: UserPayload;
+}
+
+export const loginApi = async (email: string, password: string): Promise<AuthResponse> => {
+  const res = await api.post<AuthResponse>('/auth/login', { email, password });
+  return res.data;
+};
+
+export const signupApi = async (email: string, password: string): Promise<AuthResponse> => {
+  const res = await api.post<AuthResponse>('/auth/signup', { email, password });
+  return res.data;
+};
 
 // Shared Schemas
 export interface HealthResponse {

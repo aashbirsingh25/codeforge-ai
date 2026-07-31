@@ -1,41 +1,78 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { setApiKey, getApiKey, subscribeToUnauthorized } from '../services/api';
+import {
+  setAccessToken,
+  getAccessToken,
+  subscribeToUnauthorized,
+  loginApi,
+  signupApi,
+  UserPayload
+} from '../services/api';
 
 interface AuthContextType {
-  apiKey: string | null;
+  accessToken: string | null;
+  user: UserPayload | null;
   isAuthenticated: boolean;
   error: string | null;
-  submitKey: (key: string) => void;
-  clearKey: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
+  logout: () => void;
   setError: (msg: string | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [apiKey, setApiKeyState] = useState<string | null>(getApiKey());
+  const [accessToken, setAccessTokenState] = useState<string | null>(getAccessToken());
+  const [user, setUser] = useState<UserPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const submitKey = (key: string) => {
-    const trimmed = key.trim();
-    if (!trimmed) {
-      setError('Please enter a valid access key.');
-      return;
+  const login = async (email: string, password: string) => {
+    try {
+      const res = await loginApi(email, password);
+      setAccessToken(res.access_token);
+      setAccessTokenState(res.access_token);
+      setUser(res.user);
+      setError(null);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : 'Login failed. Please check your credentials.';
+      setError(msg);
+      throw new Error(msg);
     }
-    setApiKey(trimmed);
-    setApiKeyState(trimmed);
-    setError(null);
   };
 
-  const clearKey = () => {
-    setApiKey(null);
-    setApiKeyState(null);
+  const signup = async (email: string, password: string) => {
+    try {
+      const res = await signupApi(email, password);
+      setAccessToken(res.access_token);
+      setAccessTokenState(res.access_token);
+      setUser(res.user);
+      setError(null);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+          : 'Signup failed. Please try again.';
+      setError(msg);
+      throw new Error(msg);
+    }
+  };
+
+  const logout = () => {
+    setAccessToken(null);
+    setAccessTokenState(null);
+    setUser(null);
+    setError(null);
   };
 
   useEffect(() => {
     const unsubscribe = subscribeToUnauthorized(() => {
-      setApiKeyState(null);
-      setError('Incorrect key. Access denied.');
+      setAccessToken(null);
+      setAccessTokenState(null);
+      setUser(null);
+      setError('Session expired or unauthorized. Please log in again.');
     });
     return unsubscribe;
   }, []);
@@ -43,11 +80,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   return (
     <AuthContext.Provider
       value={{
-        apiKey,
-        isAuthenticated: Boolean(apiKey),
+        accessToken,
+        user,
+        isAuthenticated: Boolean(accessToken),
         error,
-        submitKey,
-        clearKey,
+        login,
+        signup,
+        logout,
         setError,
       }}
     >

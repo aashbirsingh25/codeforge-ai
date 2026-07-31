@@ -25,6 +25,10 @@ import {
   Circle as CircleIcon,
 } from '@mui/icons-material';
 
+import { useAuth } from '../context/AuthContext';
+import { Logout as LogoutIcon } from '@mui/icons-material';
+import Button from '@mui/material/Button';
+
 const drawerWidth = 260;
 
 const navItems = [
@@ -39,6 +43,7 @@ const navItems = [
 
 export default function DashboardLayout() {
   const location = useLocation();
+  const { user, logout } = useAuth();
 
   return (
     <Box sx={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', bgcolor: 'brand.bg' }}>
@@ -192,13 +197,31 @@ export default function DashboardLayout() {
                 }}
               />
             </Box>
-            <Box sx={{ textAlign: 'right' }}>
-              <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
-                Flagship Autonomous Agent Platform
-              </Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'Fira Code, monospace' }}>
-                v2.0.0-dev
-              </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {user?.email && (
+                <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                  {user.email}
+                </Typography>
+              )}
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<LogoutIcon fontSize="small" />}
+                onClick={logout}
+                sx={{
+                  color: '#ef4444',
+                  borderColor: 'rgba(239, 68, 68, 0.4)',
+                  '&:hover': {
+                    borderColor: '#ef4444',
+                    bgcolor: 'rgba(239, 68, 68, 0.08)',
+                  },
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                }}
+              >
+                Logout
+              </Button>
             </Box>
           </Toolbar>
         </AppBar>
