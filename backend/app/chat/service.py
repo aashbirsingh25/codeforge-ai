@@ -15,8 +15,9 @@ from app.chat.exceptions import ChatProviderException
 logger = logging.getLogger("app.chat.service")
 
 class ChatService:
-    def __init__(self, manager: Optional[MemoryManager] = None):
+    def __init__(self, manager: Optional[MemoryManager] = None, user_id: Optional[str] = None):
         self.manager = manager or MemoryManager()
+        self.user_id = user_id or "default"
 
     async def get_chat_history(self, limit: int = 50) -> List[ChatHistoryMessage]:
         try:
@@ -51,7 +52,7 @@ class ChatService:
         # 1. Save user message to memory
         try:
             self.manager.save_conversation(
-                conversation_id="default",
+                conversation_id=self.user_id,
                 message=user_message,
                 role="user"
             )
@@ -144,7 +145,7 @@ class ChatService:
         # 7. Save assistant reply to memory
         try:
             self.manager.save_conversation(
-                conversation_id="default",
+                conversation_id=self.user_id,
                 message=assistant_response,
                 role="assistant"
             )
@@ -164,7 +165,7 @@ class ChatService:
         # 1. Save user message to memory
         try:
             self.manager.save_conversation(
-                conversation_id="default",
+                conversation_id=self.user_id,
                 message=user_message,
                 role="user"
             )
@@ -247,7 +248,7 @@ class ChatService:
             # 7. Save assistant reply to memory
             try:
                 self.manager.save_conversation(
-                    conversation_id="default",
+                    conversation_id=self.user_id,
                     message=assistant_response,
                     role="assistant"
                 )

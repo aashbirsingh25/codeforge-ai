@@ -22,9 +22,19 @@ def setup_test_memory(tmp_path):
     temp_dir = tmp_path / "memory_test"
     temp_dir.mkdir(parents=True, exist_ok=True)
     store = MemoryStore(memory_dir=temp_dir)
-    # Re-initialize MemoryManager singleton with the test store
-    MemoryManager(store=store)
+    manager = MemoryManager(store=store)
+    
+    from app.api.v1.endpoints.memory import get_memory_manager
+    from app.api.v1.endpoints.chat import get_chat_service
+    from app.chat.service import ChatService
+    
+    app.dependency_overrides[get_memory_manager] = lambda: manager
+    app.dependency_overrides[get_chat_service] = lambda: ChatService(manager=manager)
+    
     yield store
+    
+    app.dependency_overrides.pop(get_memory_manager, None)
+    app.dependency_overrides.pop(get_chat_service, None)
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
 

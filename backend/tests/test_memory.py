@@ -1,4 +1,5 @@
 import os
+import uuid
 import shutil
 import pytest
 from pathlib import Path
@@ -7,6 +8,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from fastapi.testclient import TestClient
 from app.main import app
+from app.core.security import create_access_token
 from tests.conftest import TEST_AUTH_HEADERS
 
 client = TestClient(app, headers=TEST_AUTH_HEADERS)
@@ -39,10 +41,19 @@ def setup_test_memory(tmp_path):
     temp_dir = tmp_path / "memory_test"
     temp_dir.mkdir(parents=True, exist_ok=True)
     store = MemoryStore(memory_dir=temp_dir)
-    # Re-initialize MemoryManager singleton with the test store
-    MemoryManager(store=store)
+    manager = MemoryManager(store=store)
+    
+    from app.api.v1.endpoints.memory import get_memory_manager
+    from app.api.v1.endpoints.chat import get_chat_service
+    from app.chat.service import ChatService
+    
+    app.dependency_overrides[get_memory_manager] = lambda: manager
+    app.dependency_overrides[get_chat_service] = lambda: ChatService(manager=manager)
+    
     yield store
-    # Cleanup
+    
+    app.dependency_overrides.pop(get_memory_manager, None)
+    app.dependency_overrides.pop(get_chat_service, None)
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
 
@@ -490,3 +501,83 @@ def test_memory_manager_save_plan_fallback(setup_test_memory):
     plan_dict = {"goal": "test", "tasks": []}
     entry = manager.save_plan("Goal text", plan_dict)
     assert entry.metadata["plan"] == plan_dict
+
+
+def test_multi_user_memory_isolation():
+    from app.core.auth import get_current_user
+    from app.api.v1.endpoints.memory import get_memory_manager
+    from app.api.v1.endpoints.chat import get_chat_service
+    from app.db.models import User
+
+    # Clear autouse fixture overrides so real per-user dependency factories run
+    app.dependency_overrides.pop(get_memory_manager, None)
+    app.dependency_overrides.pop(get_chat_service, None)
+
+    user_a_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    user_b_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+    user_a = User(id=user_a_id, email="usera@example.com", hashed_password="pw", created_at=datetime.now(timezone.utc))
+    user_b = User(id=user_b_id, email="userb@example.com", hashed_password="pw", created_at=datetime.now(timezone.utc))
+
+    token_a = create_access_token(str(user_a_id))
+    token_b = create_access_token(str(user_b_id))
+
+    client_a = TestClient(app, headers={"Authorization": f"Bearer {token_a}"})
+    client_b = TestClient(app, headers={"Authorization": f"Bearer {token_b}"})
+
+    app.dependency_overrides[get_current_user] = lambda: user_a
+
+    # User A creates a memory entry / search list via API
+    res_list_a = client_a.get("/api/v1/memory/list")
+    assert res_list_a.status_code == 200
+
+    # User A sends chat message
+    with patch("app.llm.providers.base.BaseLLMProvider.generate") as mock_gen:
+        mock_gen.return_value = MagicMock(content="Hello User A!")
+        res_chat = client_a.post("/api/v1/chat", json={"message": "Secret message from User A"})
+        assert res_chat.status_code == 200
+
+    # Switch current user to User B
+    app.dependency_overrides[get_current_user] = lambda: user_b
+
+    # User B lists memory and gets chat history
+    res_mem_b = client_b.get("/api/v1/memory/list")
+    assert res_mem_b.status_code == 200
+    b_memories = res_mem_b.json()
+    assert len(b_memories) == 0
+
+    res_chat_b = client_b.get("/api/v1/chat/history")
+    assert res_chat_b.status_code == 200
+    b_history = res_chat_b.json()
+    assert len(b_history) == 0
+
+
+def test_multi_user_workspace_isolation():
+    from app.core.auth import get_current_user
+    from app.api.v1.endpoints.workspace import get_workspace_manager
+    from app.db.models import User
+
+    # Clear autouse fixture overrides so real per-user workspace factory runs
+    app.dependency_overrides.pop(get_workspace_manager, None)
+
+    user_a_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    user_b_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+    user_a = User(id=user_a_id, email="usera@example.com", hashed_password="pw", created_at=datetime.now(timezone.utc))
+    user_b = User(id=user_b_id, email="userb@example.com", hashed_password="pw", created_at=datetime.now(timezone.utc))
+
+    token_a = create_access_token(str(user_a_id))
+    token_b = create_access_token(str(user_b_id))
+
+    client_a = TestClient(app, headers={"Authorization": f"Bearer {token_a}"})
+    client_b = TestClient(app, headers={"Authorization": f"Bearer {token_b}"})
+
+    app.dependency_overrides[get_current_user] = lambda: user_a
+    res_a = client_a.post("/api/v1/workspace/file", json={"path": "user_a_file.txt", "content": "secret a", "overwrite": True})
+    assert res_a.status_code == 200
+
+    app.dependency_overrides[get_current_user] = lambda: user_b
+    res_b = client_b.get("/api/v1/workspace/files")
+    assert res_b.status_code == 200
+    files_b = res_b.json()["files"]
+    assert "user_a_file.txt" not in files_b

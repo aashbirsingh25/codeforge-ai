@@ -1,10 +1,18 @@
-from fastapi import APIRouter, Query, HTTPException, status
+from fastapi import APIRouter, Query, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from app.workspace import workspace_manager
+from app.workspace.manager import WorkspaceManager
+from app.core.config import settings
+from app.core.auth import get_current_user
+from app.db.models import User
 from app.tools.exceptions import PathTraversalError, ToolFileNotFoundError, ToolExecutionError
 
 router = APIRouter()
+
+def get_workspace_manager(current_user: User = Depends(get_current_user)) -> WorkspaceManager:
+    user_dir = settings.WORKSPACE_DIR / "users" / str(current_user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    return WorkspaceManager(workspace_root=user_dir)
 
 # Schemas for Endpoint Bodies
 class FileCreateBody(BaseModel):
@@ -47,11 +55,14 @@ class ProjectCreateResponse(BaseModel):
 
 
 @router.get("/files", response_model=FilesListResponse)
-def list_files(path: str = "."):
+def list_files(
+    path: str = ".",
+    manager: WorkspaceManager = Depends(get_workspace_manager)
+):
     """Lists files recursively from a directory in the workspace, along with tracking status."""
     try:
-        files = workspace_manager.list_files(path)
-        tracking = workspace_manager.get_tracking_status()
+        files = manager.list_files(path)
+        tracking = manager.get_tracking_status()
         return FilesListResponse(files=files, tracking=tracking)
     except PathTraversalError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -64,10 +75,13 @@ def list_files(path: str = "."):
 
 
 @router.get("/file", response_model=FileReadResponse)
-def read_file(path: str = Query(..., description="File path relative to workspace root")):
+def read_file(
+    path: str = Query(..., description="File path relative to workspace root"),
+    manager: WorkspaceManager = Depends(get_workspace_manager)
+):
     """Reads the content of a file in the workspace."""
     try:
-        content = workspace_manager.read_file(path)
+        content = manager.read_file(path)
         return FileReadResponse(path=path, content=content)
     except PathTraversalError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -80,10 +94,13 @@ def read_file(path: str = Query(..., description="File path relative to workspac
 
 
 @router.post("/file", response_model=FileWriteResponse)
-def create_file(body: FileCreateBody):
+def create_file(
+    body: FileCreateBody,
+    manager: WorkspaceManager = Depends(get_workspace_manager)
+):
     """Creates a new file in the workspace."""
     try:
-        msg = workspace_manager.create_file(body.path, body.content, overwrite=body.overwrite)
+        msg = manager.create_file(body.path, body.content, overwrite=body.overwrite)
         return FileWriteResponse(path=body.path, success=True, message=msg)
     except PathTraversalError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -94,10 +111,13 @@ def create_file(body: FileCreateBody):
 
 
 @router.put("/file", response_model=FileUpdateResponse)
-def update_file(body: FileUpdateBody):
+def update_file(
+    body: FileUpdateBody,
+    manager: WorkspaceManager = Depends(get_workspace_manager)
+):
     """Updates a file in the workspace. Supports partial edits and diff confirmations."""
     try:
-        applied, msg, diff = workspace_manager.update_file(
+        applied, msg, diff = manager.update_file(
             body.path, body.content, confirm=body.confirm, target_content=body.target_content
         )
         return FileUpdateResponse(path=body.path, applied=applied, message=msg, diff=diff)
@@ -112,10 +132,13 @@ def update_file(body: FileUpdateBody):
 
 
 @router.delete("/file")
-def delete_file(path: str = Query(..., description="File or directory path relative to workspace root")):
+def delete_file(
+    path: str = Query(..., description="File or directory path relative to workspace root"),
+    manager: WorkspaceManager = Depends(get_workspace_manager)
+):
     """Deletes a file or directory in the workspace."""
     try:
-        msg = workspace_manager.delete_file(path)
+        msg = manager.delete_file(path)
         return {"success": True, "message": msg}
     except PathTraversalError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -128,10 +151,13 @@ def delete_file(path: str = Query(..., description="File or directory path relat
 
 
 @router.post("/project", response_model=ProjectCreateResponse)
-def create_project(body: ProjectCreateBody):
+def create_project(
+    body: ProjectCreateBody,
+    manager: WorkspaceManager = Depends(get_workspace_manager)
+):
     """Generates a boilerplate project template (fastapi, flask, cli, package, script) inside the workspace."""
     try:
-        msg = workspace_manager.create_project(body.project_type, body.name)
+        msg = manager.create_project(body.project_type, body.name)
         return ProjectCreateResponse(message=msg)
     except PathTraversalError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

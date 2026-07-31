@@ -35,9 +35,14 @@ def temp_workspace():
     # Instantiate test manager
     manager = WorkspaceManager(workspace_root=workspace_path)
     
+    # Override get_workspace_manager dependency for API calls during test
+    from app.api.v1.endpoints.workspace import get_workspace_manager
+    app.dependency_overrides[get_workspace_manager] = lambda: manager
+    
     yield manager
     
     # Restore original workspace root
+    app.dependency_overrides.pop(get_workspace_manager, None)
     workspace_manager.workspace_root = original_root
     
     # Clean up temp directory
@@ -416,34 +421,33 @@ def test_workspace_api_endpoints_error_mappings(temp_workspace):
 
 def test_workspace_api_unexpected_exceptions(temp_workspace):
 
-    
     # Mock list_files RuntimeError
-    with patch("app.workspace.workspace_manager.list_files", side_effect=RuntimeError("Unexpected")):
+    with patch.object(WorkspaceManager, "list_files", side_effect=RuntimeError("Unexpected")):
         res = client.get("/api/v1/workspace/files")
         assert res.status_code == 500
         
     # Mock read_file RuntimeError
-    with patch("app.workspace.workspace_manager.read_file", side_effect=RuntimeError("Unexpected")):
+    with patch.object(WorkspaceManager, "read_file", side_effect=RuntimeError("Unexpected")):
         res = client.get("/api/v1/workspace/file", params={"path": "test.txt"})
         assert res.status_code == 500
 
     # Mock create_file RuntimeError
-    with patch("app.workspace.workspace_manager.create_file", side_effect=RuntimeError("Unexpected")):
+    with patch.object(WorkspaceManager, "create_file", side_effect=RuntimeError("Unexpected")):
         res = client.post("/api/v1/workspace/file", json={"path": "test.txt", "content": "c"})
         assert res.status_code == 500
 
     # Mock update_file RuntimeError
-    with patch("app.workspace.workspace_manager.update_file", side_effect=RuntimeError("Unexpected")):
+    with patch.object(WorkspaceManager, "update_file", side_effect=RuntimeError("Unexpected")):
         res = client.put("/api/v1/workspace/file", json={"path": "test.txt", "content": "u"})
         assert res.status_code == 500
 
     # Mock delete_file RuntimeError
-    with patch("app.workspace.workspace_manager.delete_file", side_effect=RuntimeError("Unexpected")):
+    with patch.object(WorkspaceManager, "delete_file", side_effect=RuntimeError("Unexpected")):
         res = client.delete("/api/v1/workspace/file", params={"path": "test.txt"})
         assert res.status_code == 500
 
     # Mock create_project RuntimeError
-    with patch("app.workspace.workspace_manager.create_project", side_effect=RuntimeError("Unexpected")):
+    with patch.object(WorkspaceManager, "create_project", side_effect=RuntimeError("Unexpected")):
         res = client.post("/api/v1/workspace/project", json={"project_type": "script", "name": "app"})
         assert res.status_code == 500
 

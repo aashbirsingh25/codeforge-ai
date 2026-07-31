@@ -1,17 +1,24 @@
 from typing import List, Optional
 from fastapi import APIRouter, Query, status, Depends
 from app.memory.manager import MemoryManager
+from app.memory.store import MemoryStore
 from app.memory.schemas import (
     MemoryEntry,
     MemorySummary,
     MemoryStatistics,
     MemorySearchResponse,
 )
+from app.core.config import settings
+from app.core.auth import get_current_user
+from app.db.models import User
 
 router = APIRouter()
 
-def get_memory_manager() -> MemoryManager:
-    return MemoryManager()
+def get_memory_manager(current_user: User = Depends(get_current_user)) -> MemoryManager:
+    user_memory_dir = settings.WORKSPACE_DIR / "users" / str(current_user.id) / ".memory"
+    user_memory_dir.mkdir(parents=True, exist_ok=True)
+    store = MemoryStore(memory_dir=user_memory_dir)
+    return MemoryManager(store=store)
 
 @router.get(
     "",

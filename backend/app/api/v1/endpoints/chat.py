@@ -3,11 +3,20 @@ from fastapi import APIRouter, status, Depends
 from fastapi.responses import StreamingResponse
 from app.chat.schemas import ChatRequest, ChatResponse, ChatHistoryMessage
 from app.chat.service import ChatService
+from app.core.config import settings
+from app.core.auth import get_current_user
+from app.db.models import User
+from app.memory.store import MemoryStore
+from app.memory.manager import MemoryManager
 
 router = APIRouter()
 
-def get_chat_service() -> ChatService:
-    return ChatService()
+def get_chat_service(current_user: User = Depends(get_current_user)) -> ChatService:
+    user_memory_dir = settings.WORKSPACE_DIR / "users" / str(current_user.id) / ".memory"
+    user_memory_dir.mkdir(parents=True, exist_ok=True)
+    store = MemoryStore(memory_dir=user_memory_dir)
+    manager = MemoryManager(store=store)
+    return ChatService(manager=manager, user_id=str(current_user.id))
 
 @router.post(
     "",
