@@ -8,7 +8,7 @@ from app.tools.exceptions import PathTraversalError, ToolFileNotFoundError, Tool
 
 class WorkspaceManager:
     def __init__(self, workspace_root: Optional[Path] = None):
-        self.workspace_root = workspace_root or Path(settings.WORKSPACE_DIR).resolve()
+        self.workspace_root = Path(workspace_root).resolve() if workspace_root else Path(settings.WORKSPACE_DIR).resolve()
         # Initialize tracking lists / sets
         self.created_files: Set[str] = set()
         self.modified_files: Set[str] = set()

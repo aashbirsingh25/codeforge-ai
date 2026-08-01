@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List
 from fastapi import APIRouter, status, Depends
 from fastapi.responses import StreamingResponse
@@ -12,7 +13,7 @@ from app.memory.manager import MemoryManager
 router = APIRouter()
 
 def get_chat_service(current_user: User = Depends(get_current_user)) -> ChatService:
-    user_memory_dir = settings.WORKSPACE_DIR / "users" / str(current_user.id) / ".memory"
+    user_memory_dir = (Path(settings.WORKSPACE_DIR).resolve() / "users" / str(current_user.id) / ".memory").resolve()
     user_memory_dir.mkdir(parents=True, exist_ok=True)
     store = MemoryStore(memory_dir=user_memory_dir)
     manager = MemoryManager(store=store)

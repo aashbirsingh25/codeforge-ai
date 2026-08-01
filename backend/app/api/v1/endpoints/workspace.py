@@ -1,3 +1,4 @@
+from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -10,7 +11,7 @@ from app.tools.exceptions import PathTraversalError, ToolFileNotFoundError, Tool
 router = APIRouter()
 
 def get_workspace_manager(current_user: User = Depends(get_current_user)) -> WorkspaceManager:
-    user_dir = settings.WORKSPACE_DIR / "users" / str(current_user.id)
+    user_dir = (Path(settings.WORKSPACE_DIR).resolve() / "users" / str(current_user.id)).resolve()
     user_dir.mkdir(parents=True, exist_ok=True)
     return WorkspaceManager(workspace_root=user_dir)
 

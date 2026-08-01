@@ -566,3 +566,16 @@ def test_workspace_manager_errors_unit(temp_workspace):
             manager.rename_file("read_err.txt", "moved.txt")
 
 
+def test_workspace_manager_relative_workspace_root_resolution():
+    # Relative path passed explicitly
+    rel_path = Path("relative_workspace_root")
+    manager_rel = WorkspaceManager(workspace_root=rel_path)
+    assert manager_rel.workspace_root.is_absolute()
+    assert manager_rel.workspace_root == rel_path.resolve()
+
+    # None passed (default)
+    manager_default = WorkspaceManager(workspace_root=None)
+    assert manager_default.workspace_root.is_absolute()
+
+
+

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Query, status, Depends
 from app.memory.manager import MemoryManager
@@ -15,7 +16,7 @@ from app.db.models import User
 router = APIRouter()
 
 def get_memory_manager(current_user: User = Depends(get_current_user)) -> MemoryManager:
-    user_memory_dir = settings.WORKSPACE_DIR / "users" / str(current_user.id) / ".memory"
+    user_memory_dir = (Path(settings.WORKSPACE_DIR).resolve() / "users" / str(current_user.id) / ".memory").resolve()
     user_memory_dir.mkdir(parents=True, exist_ok=True)
     store = MemoryStore(memory_dir=user_memory_dir)
     return MemoryManager(store=store)
