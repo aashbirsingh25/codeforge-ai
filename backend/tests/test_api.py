@@ -1,7 +1,11 @@
 import uuid
+import os
+import pytest
+import pytest_asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
+from httpx import AsyncClient, ASGITransport
 
 from app.main import app
 from app.core.config import settings
@@ -163,27 +167,29 @@ def test_login_wrong_password():
     assert "Incorrect email or password" in res.text
 
 
+@pytest.mark.asyncio
+async def test_placeholder_endpoints(db_session):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=TEST_AUTH_HEADERS) as ac:
+        # Projects Route
+        res_proj = await ac.get("/api/v1/projects")
+        assert res_proj.status_code == 200
+        assert "projects" in res_proj.json()
 
-def test_placeholder_endpoints():
-    # Projects Route
-    res_proj = client.get("/api/v1/projects")
-    assert res_proj.status_code == 200
-    assert "projects" in res_proj.json()
+        # Agents Route
+        res_ag = await ac.get("/api/v1/agents")
+        assert res_ag.status_code == 200
+        assert "agents" in res_ag.json()
 
-    # Agents Route
-    res_ag = client.get("/api/v1/agents")
-    assert res_ag.status_code == 200
-    assert "agents" in res_ag.json()
+        # Memory Route
+        res_mem = await ac.get("/api/v1/memory")
+        assert res_mem.status_code == 200
+        assert "total_entries" in res_mem.json()
 
-    # Memory Route
-    res_mem = client.get("/api/v1/memory")
-    assert res_mem.status_code == 200
-    assert "short_term_contexts_count" in res_mem.json()
+        # Settings Route
+        res_sett = await ac.get("/api/v1/settings")
+        assert res_sett.status_code == 200
+        assert "workspace_dir" in res_sett.json()
 
-    # Settings Route
-    res_sett = client.get("/api/v1/settings")
-    assert res_sett.status_code == 200
-    assert "workspace_dir" in res_sett.json()
 
 def test_get_providers_settings():
     response = client.get("/api/v1/settings/providers")
@@ -194,9 +200,8 @@ def test_get_providers_settings():
     assert "gemini" in providers
     assert "openai" in providers
 
+
 def test_get_providers_health_offline():
-    import os
-    from unittest.mock import patch
     with patch.dict(os.environ, {}, clear=True):
         response = client.get("/api/v1/settings/providers/health")
         assert response.status_code == 200
@@ -205,6 +210,7 @@ def test_get_providers_health_offline():
         for p in data:
             assert p["status"] == "unhealthy"
             assert "not set" in p["error_message"].lower()
+
 
 def test_list_tools_endpoint():
     response = client.get("/api/v1/tools")
@@ -220,6 +226,7 @@ def test_list_tools_endpoint():
     assert "run_command" in names
     assert "git_status" in names
 
+
 def test_get_tool_endpoint_success():
     response = client.get("/api/v1/tools/read_file")
     assert response.status_code == 200
@@ -229,13 +236,13 @@ def test_get_tool_endpoint_success():
     assert "properties" in data["input_schema"]
     assert "properties" in data["output_schema"]
 
+
 def test_get_tool_endpoint_not_found():
     response = client.get("/api/v1/tools/non_existent_tool_123")
     assert response.status_code == 404
     assert "not found" in response.json()["error"]["message"].lower()
 
 
-from unittest.mock import patch, MagicMock, AsyncMock
 from app.llm.exceptions import (
     LLMAuthenticationException,
     LLMUnsupportedModelException,
@@ -244,6 +251,7 @@ from app.llm.exceptions import (
 )
 from app.planner.exceptions import PlanningValidationError
 from app.core.exceptions import WorkspaceException
+
 
 def test_api_error_invalid_api_key():
     with patch("app.planner.service.PlannerService.generate_plan", side_effect=LLMAuthenticationException("auth failed", provider="gemini")):
@@ -257,6 +265,7 @@ def test_api_error_invalid_api_key():
         assert "timestamp" in data["error"]
         assert "request_id" in data["error"]
 
+
 def test_api_error_unsupported_model():
     with patch("app.planner.service.PlannerService.generate_plan", side_effect=LLMUnsupportedModelException("model unsupported", provider="gemini")):
         response = client.post("/api/v1/planner/plan", json={"goal": "Build FastAPI"})
@@ -264,6 +273,7 @@ def test_api_error_unsupported_model():
         data = response.json()
         assert data["error"]["type"] == "LLMUnsupportedModelException"
         assert data["error"]["message"] == "model unsupported"
+
 
 def test_api_error_rate_limit():
     with patch("app.planner.service.PlannerService.generate_plan", side_effect=LLMRateLimitException("rate limited", provider="gemini")):
@@ -273,6 +283,7 @@ def test_api_error_rate_limit():
         assert data["error"]["type"] == "LLMRateLimitException"
         assert data["error"]["message"] == "rate limited"
 
+
 def test_api_error_timeout():
     with patch("app.planner.service.PlannerService.generate_plan", side_effect=LLMTimeoutException("timed out", provider="gemini")):
         response = client.post("/api/v1/planner/plan", json={"goal": "Build FastAPI"})
@@ -281,6 +292,7 @@ def test_api_error_timeout():
         assert data["error"]["type"] == "LLMTimeoutException"
         assert data["error"]["message"] == "timed out"
 
+
 def test_api_error_validation_error():
     with patch("app.planner.service.PlannerService.generate_plan", side_effect=PlanningValidationError("invalid plan schema")):
         response = client.post("/api/v1/planner/plan", json={"goal": "Build FastAPI"})
@@ -288,6 +300,7 @@ def test_api_error_validation_error():
         data = response.json()
         assert data["error"]["type"] == "PlanningValidationError"
         assert data["error"]["message"] == "invalid plan schema"
+
 
 def test_api_error_workspace_permission():
     with patch("app.planner.service.PlannerService.generate_plan", side_effect=WorkspaceException("workspace violation")):
@@ -391,4 +404,3 @@ def test_agents_execute_success():
         data = response.json()
         assert data["status"] == "COMPLETED"
         assert "t1" in data["state"]["completed_tasks"]
-

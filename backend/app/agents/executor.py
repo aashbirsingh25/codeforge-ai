@@ -1,6 +1,7 @@
 import logging
 import time
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Any
 from collections import deque
@@ -24,6 +25,7 @@ from app.agents.exceptions import (
     AgentRetryExceededError
 )
 from app.llm.exceptions import LLMException
+from app.memory.manager import MemoryManager
 
 logger = logging.getLogger("app.agents.executor")
 
@@ -60,16 +62,34 @@ def topological_sort(tasks: List[Task]) -> List[Task]:
 
 
 class AgentExecutor:
-    def __init__(self, plan: ExecutionPlan, provider: str = "gemini", max_retries: int = 3, execution_id: Optional[str] = None):
+    def __init__(
+        self,
+        plan: ExecutionPlan,
+        provider: str = "gemini",
+        max_retries: int = 3,
+        execution_id: Optional[str] = None,
+        memory_manager: Optional[MemoryManager] = None
+    ):
         self.plan = plan
         self.provider = provider
         self.max_retries = max_retries
         self.state_mgr = ExecutionStateManager(plan)
         self.execution_id = execution_id or str(uuid.uuid4())
         self.react_trace = ReActTrace(execution_id=self.execution_id, steps=[])
+        self.memory_manager = memory_manager
+        self._pending_memory_tasks: List[asyncio.Task] = []
+        self._memory_lock = asyncio.Lock()
+
+    async def _flush_pending_memory_tasks(self) -> None:
+        """Awaits all pending background memory save tasks and logs any exceptions."""
+        if self._pending_memory_tasks:
+            results = await asyncio.gather(*self._pending_memory_tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.warning(f"Pending memory save task failed: {res}")
+            self._pending_memory_tasks.clear()
 
     async def execute(self) -> ExecutionResponse:
-        import asyncio
         start_time_perf = time.perf_counter()
         start_time_iso = self.state_mgr.state.timestamps["start_time"]
         
@@ -110,18 +130,19 @@ class AgentExecutor:
                 except Exception:
                     pass
                 # Save execution summary for dependency error
-                try:
-                    from app.memory.manager import MemoryManager
-                    MemoryManager().save_execution(
-                        execution_id=self.execution_id,
-                        goal=self.plan.goal,
-                        status="FAILED",
-                        tasks=self.plan.tasks,
-                        duration=duration,
-                        error=str(e)
-                    )
-                except Exception as ex_mem:
-                    logger.warning(f"Failed to save execution summary to memory on dependency error: {ex_mem}")
+                if self.memory_manager:
+                    try:
+                        async with self._memory_lock:
+                            await self.memory_manager.save_execution(
+                                execution_id=self.execution_id,
+                                goal=self.plan.goal,
+                                status="FAILED",
+                                tasks=self.plan.tasks,
+                                duration=duration,
+                                error=str(e)
+                            )
+                    except Exception as ex_mem:
+                        logger.warning(f"Failed to save execution summary to memory on dependency error: {ex_mem}")
                 raise
 
             logger.info(f"Starting execution of plan. Goal: '{self.plan.goal}'. Task order: {[t.id for t in ordered_tasks]}")
@@ -223,23 +244,27 @@ class AgentExecutor:
                             except Exception:
                                 pass
 
-                            try:
-                                from app.memory.manager import MemoryManager
-                                mgr = MemoryManager()
-                                mgr.save_tool_output(
-                                    tool_name=action.tool_name,
-                                    args=action.tool_args,
-                                    output=observation.content or "",
-                                    success=observation.success
-                                )
+                            if self.memory_manager:
                                 obs_content = observation.content if observation.success else (observation.error or "Unknown error")
-                                mgr.save_observation(
-                                    task_id=task.id,
-                                    content=obs_content,
-                                    success=observation.success
-                                )
-                            except Exception as e_mem:
-                                logger.warning(f"Failed to save tool callback to memory: {e_mem}")
+                                async def _save_action_memories():
+                                    try:
+                                        async with self._memory_lock:
+                                            await self.memory_manager.save_tool_output(
+                                                tool_name=action.tool_name,
+                                                args=action.tool_args,
+                                                output=observation.content or "",
+                                                success=observation.success
+                                            )
+                                            await self.memory_manager.save_observation(
+                                                task_id=task.id,
+                                                content=obs_content,
+                                                success=observation.success
+                                            )
+                                    except Exception as e_mem:
+                                        logger.warning(f"Failed to save tool callback to memory: {e_mem}")
+
+                                task_obj = asyncio.create_task(_save_action_memories())
+                                self._pending_memory_tasks.append(task_obj)
 
                         def record_react_step_callback(step: ReActStep):
                             self.react_trace.steps.append(step)
@@ -270,17 +295,20 @@ class AgentExecutor:
                             except Exception:
                                 pass
 
-                            try:
-                                from app.memory.manager import MemoryManager
-                                mgr = MemoryManager()
-                                if step.thought and step.thought.reasoning:
-                                    mgr.save_observation(
-                                        task_id=task.id,
-                                        content=f"Thought reasoning: {step.thought.reasoning}",
-                                        success=True
-                                    )
-                            except Exception as e_mem:
-                                logger.warning(f"Failed to record react step to memory: {e_mem}")
+                            if self.memory_manager and step.thought and step.thought.reasoning:
+                                async def _save_step_memory():
+                                    try:
+                                        async with self._memory_lock:
+                                            await self.memory_manager.save_observation(
+                                                task_id=task.id,
+                                                content=f"Thought reasoning: {step.thought.reasoning}",
+                                                success=True
+                                            )
+                                    except Exception as e_mem:
+                                        logger.warning(f"Failed to record react step to memory: {e_mem}")
+
+                                task_obj = asyncio.create_task(_save_step_memory())
+                                self._pending_memory_tasks.append(task_obj)
 
                         context = {
                             "task": task,
@@ -302,25 +330,27 @@ class AgentExecutor:
                         logger.error(f"task failed due to provider error: task_id={task.id} error={ex}")
                         self.state_mgr.fail_task(task.id, str(ex))
                         self.state_mgr.finalize()
-                        try:
-                            from app.memory.manager import MemoryManager
-                            MemoryManager().save_observation(task_id=task.id, content=f"LLM Error: {str(ex)}", success=False)
-                        except Exception:
-                            pass
+                        if self.memory_manager:
+                            try:
+                                async with self._memory_lock:
+                                    await self.memory_manager.save_observation(task_id=task.id, content=f"LLM Error: {str(ex)}", success=False)
+                            except Exception:
+                                pass
                         raise
                     except asyncio.CancelledError:
                         raise
                     except Exception as ex:
                         task_error_details = str(ex)
-                        try:
-                            from app.memory.manager import MemoryManager
-                            MemoryManager().save_observation(
-                                task_id=task.id,
-                                content=f"Error on retry {current_retry}: {str(ex)}",
-                                success=False
-                            )
-                        except Exception:
-                            pass
+                        if self.memory_manager:
+                            try:
+                                async with self._memory_lock:
+                                    await self.memory_manager.save_observation(
+                                        task_id=task.id,
+                                        content=f"Error on retry {current_retry}: {str(ex)}",
+                                        success=False
+                                    )
+                            except Exception:
+                                pass
                         
                         if current_retry < self.max_retries:
                             count = self.state_mgr.increment_retry(task.id)
@@ -377,22 +407,26 @@ class AgentExecutor:
             except Exception:
                 pass
 
+            # Await all pending background memory tasks BEFORE saving execution summary
+            await self._flush_pending_memory_tasks()
+
             # Save execution summary to memory
-            try:
-                from app.memory.manager import MemoryManager
-                exec_error = None
-                if self.state_mgr.state.failed_tasks:
-                    exec_error = f"Failed tasks: {self.state_mgr.state.failed_tasks}"
-                MemoryManager().save_execution(
-                    execution_id=self.execution_id,
-                    goal=self.plan.goal,
-                    status=response.status,
-                    tasks=self.plan.tasks,
-                    duration=duration,
-                    error=exec_error
-                )
-            except Exception as e:
-                logger.warning(f"Failed to save execution summary to memory: {e}")
+            if self.memory_manager:
+                try:
+                    exec_error = None
+                    if self.state_mgr.state.failed_tasks:
+                        exec_error = f"Failed tasks: {self.state_mgr.state.failed_tasks}"
+                    async with self._memory_lock:
+                        await self.memory_manager.save_execution(
+                            execution_id=self.execution_id,
+                            goal=self.plan.goal,
+                            status=response.status,
+                            tasks=self.plan.tasks,
+                            duration=duration,
+                            error=exec_error
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to save execution summary to memory: {e}")
 
             return response
             
@@ -412,3 +446,5 @@ class AgentExecutor:
             except Exception:
                 pass
             raise err
+        finally:
+            await self._flush_pending_memory_tasks()

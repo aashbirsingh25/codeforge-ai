@@ -1,23 +1,27 @@
-from pathlib import Path
 from typing import List
 from fastapi import APIRouter, status, Depends
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.chat.schemas import ChatRequest, ChatResponse, ChatHistoryMessage
 from app.chat.service import ChatService
-from app.core.config import settings
 from app.core.auth import get_current_user
+from app.db.base import get_db_session
 from app.db.models import User
 from app.memory.store import MemoryStore
 from app.memory.manager import MemoryManager
 
 router = APIRouter()
 
-def get_chat_service(current_user: User = Depends(get_current_user)) -> ChatService:
-    user_memory_dir = (Path(settings.WORKSPACE_DIR).resolve() / "users" / str(current_user.id) / ".memory").resolve()
-    user_memory_dir.mkdir(parents=True, exist_ok=True)
-    store = MemoryStore(memory_dir=user_memory_dir)
+
+def get_chat_service(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> ChatService:
+    store = MemoryStore(db=db, user_id=current_user.id)
     manager = MemoryManager(store=store)
     return ChatService(manager=manager, user_id=str(current_user.id))
+
 
 @router.post(
     "",
@@ -45,6 +49,7 @@ async def send_chat_message(
     service: ChatService = Depends(get_chat_service)
 ):
     return await service.send_message(request.message)
+
 
 @router.get(
     "/history",
@@ -79,6 +84,7 @@ async def get_history(
 ):
     return await service.get_chat_history()
 
+
 @router.delete(
     "/history",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -95,6 +101,7 @@ async def clear_history(
 ):
     await service.clear_chat_history()
     return None
+
 
 @router.post(
     "/stream",

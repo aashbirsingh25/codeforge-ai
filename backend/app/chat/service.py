@@ -1,5 +1,6 @@
 import time
 import logging
+import json
 from typing import List, Dict, Any, Optional, AsyncGenerator
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from app.chat.exceptions import ChatProviderException
 
 logger = logging.getLogger("app.chat.service")
 
+
 class ChatService:
     def __init__(self, manager: Optional[MemoryManager] = None, user_id: Optional[str] = None):
         self.manager = manager or MemoryManager()
@@ -21,7 +23,7 @@ class ChatService:
 
     async def get_chat_history(self, limit: int = 50) -> List[ChatHistoryMessage]:
         try:
-            entries = self.manager.retrieve_by_category("conversation", limit=limit)
+            entries = await self.manager.retrieve_by_category("conversation", limit=limit)
             # Reverse list to keep chronological order (oldest message first)
             entries.reverse()
             
@@ -40,9 +42,10 @@ class ChatService:
 
     async def clear_chat_history(self) -> None:
         try:
-            entries = self.manager.store.list(category="conversation")
-            for entry in entries:
-                self.manager.store.delete(entry.id)
+            if self.manager and self.manager.store:
+                entries = await self.manager.store.list(category="conversation")
+                for entry in entries:
+                    await self.manager.store.delete(entry.id)
         except Exception as e:
             logger.error(f"Failed to clear chat history: {e}")
 
@@ -51,7 +54,7 @@ class ChatService:
         
         # 1. Save user message to memory
         try:
-            self.manager.save_conversation(
+            await self.manager.save_conversation(
                 conversation_id=self.user_id,
                 message=user_message,
                 role="user"
@@ -64,7 +67,7 @@ class ChatService:
         
         try:
             # Query similar plan history
-            plans = self.manager.retrieve_similar(query=user_message, limit=2, category="plan")
+            plans = await self.manager.retrieve_similar(query=user_message, limit=2, category="plan")
             if plans:
                 context_blocks.append("--- RELEVANT PLANNING HISTORY ---")
                 for p in plans:
@@ -72,14 +75,14 @@ class ChatService:
                     context_blocks.append(f"Plan Goal: '{goal}'\nPlan Content: {p.content}")
                     
             # Query similar execution history
-            executions = self.manager.retrieve_similar(query=user_message, limit=2, category="execution")
+            executions = await self.manager.retrieve_similar(query=user_message, limit=2, category="execution")
             if executions:
                 context_blocks.append("--- RECENT EXECUTION HISTORY ---")
                 for ex in executions:
                     context_blocks.append(f"Execution: {ex.content}")
                     
             # Query similar tool execution history
-            tools = self.manager.retrieve_similar(query=user_message, limit=3, category="tool_output")
+            tools = await self.manager.retrieve_similar(query=user_message, limit=3, category="tool_output")
             if tools:
                 context_blocks.append("--- RELEVANT TOOL EXECUTION HISTORY ---")
                 for t in tools:
@@ -144,7 +147,7 @@ class ChatService:
 
         # 7. Save assistant reply to memory
         try:
-            self.manager.save_conversation(
+            await self.manager.save_conversation(
                 conversation_id=self.user_id,
                 message=assistant_response,
                 role="assistant"
@@ -164,7 +167,7 @@ class ChatService:
         logger.info("Starting message stream processing")
         # 1. Save user message to memory
         try:
-            self.manager.save_conversation(
+            await self.manager.save_conversation(
                 conversation_id=self.user_id,
                 message=user_message,
                 role="user"
@@ -175,17 +178,17 @@ class ChatService:
         # 2. Retrieve relevant context blocks using Memory Engine search queries
         context_blocks = []
         try:
-            plans = self.manager.retrieve_similar(query=user_message, limit=2, category="plan")
+            plans = await self.manager.retrieve_similar(query=user_message, limit=2, category="plan")
             if plans:
                 context_blocks.append("--- RELEVANT PLANNING HISTORY ---")
                 for p in plans:
                     context_blocks.append(f"Plan Goal: '{p.metadata.get('goal')}'\nPlan Content: {p.content}")
-            executions = self.manager.retrieve_similar(query=user_message, limit=2, category="execution")
+            executions = await self.manager.retrieve_similar(query=user_message, limit=2, category="execution")
             if executions:
                 context_blocks.append("--- RECENT EXECUTION HISTORY ---")
                 for ex in executions:
                     context_blocks.append(f"Execution: {ex.content}")
-            tools = self.manager.retrieve_similar(query=user_message, limit=3, category="tool_output")
+            tools = await self.manager.retrieve_similar(query=user_message, limit=3, category="tool_output")
             if tools:
                 context_blocks.append("--- RELEVANT TOOL EXECUTION HISTORY ---")
                 for t in tools:
@@ -234,7 +237,6 @@ class ChatService:
         )
 
         # 6. Stream completion from LLM provider
-        import json
         full_response = []
         try:
             yield f"event: started\ndata: {json.dumps({'status': 'started'})}\n\n"
@@ -247,7 +249,7 @@ class ChatService:
             
             # 7. Save assistant reply to memory
             try:
-                self.manager.save_conversation(
+                await self.manager.save_conversation(
                     conversation_id=self.user_id,
                     message=assistant_response,
                     role="assistant"
@@ -262,7 +264,6 @@ class ChatService:
             code = "INTERNAL_ERROR"
             status_code = 500
             
-            # Extract structured status_code or error code if it's a known LLMException
             if isinstance(e, LLMException):
                 status_code = getattr(e, "status_code", 500)
                 if status_code == 429:

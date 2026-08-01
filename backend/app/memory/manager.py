@@ -8,31 +8,17 @@ from app.memory.schemas import (
     MemoryEntry, 
     MemorySummary, 
     MemoryStatistics, 
-    MemorySearchResult,
-    ConversationMemory,
-    ExecutionMemory,
-    ObservationMemory,
-    ToolMemory
+    MemorySearchResult
 )
 
 logger = logging.getLogger("app.memory.manager")
 
+
 class MemoryManager:
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(MemoryManager, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self, store: Optional[MemoryStore] = None):
-        if store is not None:
-            self.store = store
-        elif not hasattr(self, "store"):
-            self.store = MemoryStore()
+        self.store = store
 
-    def save_execution(
+    async def save_execution(
         self,
         execution_id: str,
         goal: str,
@@ -70,10 +56,11 @@ class MemoryManager:
             metadata=metadata,
             tags=tags
         )
-        self.store.save(entry)
+        if self.store:
+            await self.store.save(entry)
         return entry
 
-    def save_plan(self, goal: str, plan: Any) -> MemoryEntry:
+    async def save_plan(self, goal: str, plan: Any) -> MemoryEntry:
         if hasattr(plan, "model_dump"):
             plan_dict = plan.model_dump()
         elif hasattr(plan, "dict"):
@@ -96,10 +83,11 @@ class MemoryManager:
             metadata=metadata,
             tags=["plan", "generation"]
         )
-        self.store.save(entry)
+        if self.store:
+            await self.store.save(entry)
         return entry
 
-    def save_tool_output(
+    async def save_tool_output(
         self,
         tool_name: str,
         args: Dict[str, Any],
@@ -124,10 +112,11 @@ class MemoryManager:
             metadata=metadata,
             tags=tags
         )
-        self.store.save(entry)
+        if self.store:
+            await self.store.save(entry)
         return entry
 
-    def save_observation(
+    async def save_observation(
         self,
         task_id: str,
         content: str,
@@ -150,10 +139,11 @@ class MemoryManager:
             metadata=metadata,
             tags=tags
         )
-        self.store.save(entry)
+        if self.store:
+            await self.store.save(entry)
         return entry
 
-    def save_conversation(
+    async def save_conversation(
         self,
         conversation_id: str,
         message: str,
@@ -175,28 +165,46 @@ class MemoryManager:
             metadata=metadata,
             tags=tags
         )
-        self.store.save(entry)
+        if self.store:
+            await self.store.save(entry)
         return entry
 
-    def retrieve_recent(self, limit: int = 5, category: Optional[str] = None) -> List[MemoryEntry]:
-        return self.store.list(category=category, limit=limit)
+    async def retrieve_recent(self, limit: int = 5, category: Optional[str] = None) -> List[MemoryEntry]:
+        if not self.store:
+            return []
+        return await self.store.list(category=category, limit=limit)
 
-    def retrieve_by_tag(self, tag: str, limit: int = 5) -> List[MemoryEntry]:
-        return self.store.list(tags=[tag], limit=limit)
+    async def retrieve_by_tag(self, tag: str, limit: int = 5) -> List[MemoryEntry]:
+        if not self.store:
+            return []
+        return await self.store.list(tags=[tag], limit=limit)
 
-    def retrieve_by_category(self, category: str, limit: int = 5) -> List[MemoryEntry]:
-        return self.store.list(category=category, limit=limit)
+    async def retrieve_by_category(self, category: str, limit: int = 5) -> List[MemoryEntry]:
+        if not self.store:
+            return []
+        return await self.store.list(category=category, limit=limit)
 
-    def retrieve_similar(self, query: str, limit: int = 5, category: Optional[str] = None) -> List[MemoryEntry]:
-        search_results = self.store.search(query=query, category=category, limit=limit)
+    async def retrieve_similar(self, query: str, limit: int = 5, category: Optional[str] = None) -> List[MemoryEntry]:
+        if not self.store:
+            return []
+        search_results = await self.store.search(query=query, category=category, limit=limit)
         return [res.entry for res in search_results]
 
-    def clear_history(self) -> None:
-        self.store.clear()
+    async def clear_history(self) -> None:
+        if self.store:
+            await self.store.clear()
 
-    def summarize(self) -> MemorySummary:
-        entries = self.store.list()
-        
+    async def summarize(self) -> MemorySummary:
+        if not self.store:
+            return MemorySummary(
+                total_entries=0,
+                category_counts={},
+                recent_entries=[],
+                short_term_contexts_count=0,
+                long_term_vector_nodes=0,
+                status="ready"
+            )
+        entries = await self.store.list()
         category_counts = {}
         for entry in entries:
             category_counts[entry.category] = category_counts.get(entry.category, 0) + 1

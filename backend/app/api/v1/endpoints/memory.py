@@ -1,6 +1,7 @@
-from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Query, status, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.memory.manager import MemoryManager
 from app.memory.store import MemoryStore
 from app.memory.schemas import (
@@ -9,17 +10,20 @@ from app.memory.schemas import (
     MemoryStatistics,
     MemorySearchResponse,
 )
-from app.core.config import settings
 from app.core.auth import get_current_user
+from app.db.base import get_db_session
 from app.db.models import User
 
 router = APIRouter()
 
-def get_memory_manager(current_user: User = Depends(get_current_user)) -> MemoryManager:
-    user_memory_dir = (Path(settings.WORKSPACE_DIR).resolve() / "users" / str(current_user.id) / ".memory").resolve()
-    user_memory_dir.mkdir(parents=True, exist_ok=True)
-    store = MemoryStore(memory_dir=user_memory_dir)
+
+def get_memory_manager(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+) -> MemoryManager:
+    store = MemoryStore(db=db, user_id=current_user.id)
     return MemoryManager(store=store)
+
 
 @router.get(
     "",
@@ -52,8 +56,9 @@ def get_memory_manager(current_user: User = Depends(get_current_user)) -> Memory
         }
     }
 )
-def get_memory_summary(manager: MemoryManager = Depends(get_memory_manager)):
-    return manager.summarize()
+async def get_memory_summary(manager: MemoryManager = Depends(get_memory_manager)):
+    return await manager.summarize()
+
 
 @router.get(
     "/list",
@@ -82,20 +87,23 @@ def get_memory_summary(manager: MemoryManager = Depends(get_memory_manager)):
         }
     }
 )
-def list_memory_entries(
+async def list_memory_entries(
     category: Optional[str] = Query(None, description="Filter by memory category"),
     tags: Optional[List[str]] = Query(None, description="Filter by tags (entry must have all listed tags)"),
     limit: Optional[int] = Query(None, description="Limit the number of returned entries"),
     manager: MemoryManager = Depends(get_memory_manager)
 ):
-    return manager.store.list(category=category, tags=tags, limit=limit)
+    if not manager.store:
+        return []
+    return await manager.store.list(category=category, tags=tags, limit=limit)
+
 
 @router.get(
     "/search",
     response_model=MemorySearchResponse,
     status_code=status.HTTP_200_OK,
     summary="Search memory entries",
-    description="Query memory entries using keyword matching, returning ranked results based on similarity scoring.",
+    description="Query memory entries using vector similarity search with keyword fallback.",
     responses={
         200: {
             "description": "Success searching memories",
@@ -113,7 +121,7 @@ def list_memory_entries(
                                     "metadata": {"goal": "Test Goal"},
                                     "tags": ["plan", "generation"]
                                 },
-                                "score": 3.0
+                                "score": 1.0
                             }
                         ]
                     }
@@ -122,22 +130,25 @@ def list_memory_entries(
         }
     }
 )
-def search_memory(
+async def search_memory(
     query: str = Query(..., description="Search query string"),
     category: Optional[str] = Query(None, description="Filter search by category"),
     tags: Optional[List[str]] = Query(None, description="Filter search by tags"),
     limit: int = Query(10, description="Max number of search results to return"),
     manager: MemoryManager = Depends(get_memory_manager)
 ):
-    results = manager.store.search(query=query, category=category, tags=tags, limit=limit)
+    if not manager.store:
+        return MemorySearchResponse(results=[])
+    results = await manager.store.search(query=query, category=category, tags=tags, limit=limit)
     return MemorySearchResponse(results=results)
+
 
 @router.get(
     "/statistics",
     response_model=MemoryStatistics,
     status_code=status.HTTP_200_OK,
     summary="Get memory storage statistics",
-    description="Retrieve storage details, including total entry counts, category counts, tag counts, storage size on disk, and last update timestamp.",
+    description="Retrieve storage details, including total entry counts, category counts, tag counts, storage size, and last update timestamp.",
     responses={
         200: {
             "description": "Success retrieving statistics",
@@ -155,20 +166,23 @@ def search_memory(
         }
     }
 )
-def get_memory_statistics(manager: MemoryManager = Depends(get_memory_manager)):
-    return manager.store.statistics()
+async def get_memory_statistics(manager: MemoryManager = Depends(get_memory_manager)):
+    if not manager.store:
+        return MemoryStatistics(total_entries=0, category_counts={}, tag_counts={}, storage_size_bytes=0, last_updated=None)
+    return await manager.store.statistics()
+
 
 @router.delete(
     "",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Clear all memory entries",
-    description="Permanently delete all memory entries stored on disk.",
+    description="Permanently delete all memory entries stored in PostgreSQL.",
     responses={
         204: {
             "description": "Memory successfully cleared"
         }
     }
 )
-def clear_memory(manager: MemoryManager = Depends(get_memory_manager)):
-    manager.clear_history()
+async def clear_memory(manager: MemoryManager = Depends(get_memory_manager)):
+    await manager.clear_history()
     return None

@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from app.planner.schemas import PlanningRequest, PlanningResponse, ExecutionPlan
 from app.planner.exceptions import PlanningError, PlanningStrategyError, PlanningValidationError
@@ -9,6 +9,7 @@ from app.planner.planner import Planner
 from app.llm.factory import ProviderFactory
 from app.llm.schemas import ChatCompletionRequest, ChatMessage
 from app.llm.exceptions import LLMException
+from app.memory.manager import MemoryManager
 
 logger = logging.getLogger("app.planner")
 
@@ -27,7 +28,11 @@ class PlannerService:
         """Lists names of all available planning strategies."""
         return list(self._strategies.keys())
 
-    async def generate_plan(self, request: PlanningRequest) -> PlanningResponse:
+    async def generate_plan(
+        self,
+        request: PlanningRequest,
+        memory_manager: Optional[MemoryManager] = None
+    ) -> PlanningResponse:
         """Asynchronously calls the LLM provider to construct a validated ExecutionPlan."""
         start_time = time.perf_counter()
         
@@ -58,13 +63,15 @@ class PlannerService:
         system_prompt, user_prompt = planner.get_prompts(request.goal)
 
         # Query MemoryManager & retrieve relevant previous context
-        try:
-            from app.memory.service import memory_service
-            memory_context = await memory_service.get_planning_context(request.goal)
-            if memory_context:
-                user_prompt += f"\n\n### RELEVANT PREVIOUS CONTEXT & MEMORY\n{memory_context}"
-        except Exception as e:
-            logger.warning(f"Failed to retrieve planning memory context: {e}")
+        if memory_manager:
+            try:
+                from app.memory.service import MemoryService
+                mem_service = MemoryService(manager=memory_manager)
+                memory_context = await mem_service.get_planning_context(request.goal)
+                if memory_context:
+                    user_prompt += f"\n\n### RELEVANT PREVIOUS CONTEXT & MEMORY\n{memory_context}"
+            except Exception as e:
+                logger.warning(f"Failed to retrieve planning memory context: {e}")
 
         chat_request = ChatCompletionRequest(
             model=model_name,
@@ -109,11 +116,11 @@ class PlannerService:
         duration = time.perf_counter() - start_time
         
         # Save successful plan to memory
-        try:
-            from app.memory.manager import MemoryManager
-            MemoryManager().save_plan(goal=request.goal, plan=plan)
-        except Exception as e:
-            logger.warning(f"Failed to save plan to memory: {e}")
+        if memory_manager:
+            try:
+                await memory_manager.save_plan(goal=request.goal, plan=plan)
+            except Exception as e:
+                logger.warning(f"Failed to save plan to memory: {e}")
 
         # 6. Structured log of success
         logger.info(

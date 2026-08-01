@@ -1,3 +1,4 @@
+import os
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 
 from app.core.config import settings
 
@@ -18,11 +20,13 @@ class Base(DeclarativeBase):
 # Lazy/dynamic engine creation helper to support dynamic settings overrides
 def get_async_engine(db_url: str | None = None) -> AsyncEngine:
     url = db_url or settings.DATABASE_URL
+    is_testing = os.getenv("TESTING", "false").lower() == "true"
+    pool_cls = NullPool if is_testing else AsyncAdaptedQueuePool
     return create_async_engine(
         url,
         echo=False,
         future=True,
-        pool_pre_ping=True
+        poolclass=pool_cls
     )
 
 

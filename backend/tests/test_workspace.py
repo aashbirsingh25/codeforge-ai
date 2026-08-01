@@ -6,10 +6,17 @@ from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi.testclient import TestClient
 
+import uuid
+from datetime import datetime, timezone
 from app.main import app
+from app.core.security import create_access_token
+from app.core.auth import get_current_user
+from app.api.v1.endpoints.workspace import get_workspace_manager
+from app.db.models import User
 from tests.conftest import TEST_AUTH_HEADERS
 
 client = TestClient(app, headers=TEST_AUTH_HEADERS)
+
 
 
 from app.workspace import WorkspaceManager
@@ -576,6 +583,34 @@ def test_workspace_manager_relative_workspace_root_resolution():
     # None passed (default)
     manager_default = WorkspaceManager(workspace_root=None)
     assert manager_default.workspace_root.is_absolute()
+
+
+def test_multi_user_workspace_isolation():
+    # Clear autouse fixture overrides so real per-user workspace factory runs
+    app.dependency_overrides.pop(get_workspace_manager, None)
+
+    user_a_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    user_b_id = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+    user_a = User(id=user_a_id, email="usera@example.com", hashed_password="pw", created_at=datetime.now(timezone.utc))
+    user_b = User(id=user_b_id, email="userb@example.com", hashed_password="pw", created_at=datetime.now(timezone.utc))
+
+    token_a = create_access_token(str(user_a_id))
+    token_b = create_access_token(str(user_b_id))
+
+    client_a = TestClient(app, headers={"Authorization": f"Bearer {token_a}"})
+    client_b = TestClient(app, headers={"Authorization": f"Bearer {token_b}"})
+
+    app.dependency_overrides[get_current_user] = lambda: user_a
+    res_a = client_a.post("/api/v1/workspace/file", json={"path": "user_a_file.txt", "content": "secret a", "overwrite": True})
+    assert res_a.status_code == 200
+
+    app.dependency_overrides[get_current_user] = lambda: user_b
+    res_b = client_b.get("/api/v1/workspace/files")
+    assert res_b.status_code == 200
+    files_b = res_b.json()["files"]
+    assert "user_a_file.txt" not in files_b
+
 
 
 

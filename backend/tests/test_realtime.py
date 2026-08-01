@@ -1,14 +1,17 @@
 import os
 import time
 import pytest
+import pytest_asyncio
 import json
 import asyncio
-import shutil
 from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 
 from app.main import app
-from tests.conftest import TEST_AUTH_HEADERS
+from app.db.base import AsyncSessionLocal
+from app.db.models import Memory
+from tests.conftest import TEST_USER_ID, TEST_AUTH_HEADERS
 
 client = TestClient(app, headers=TEST_AUTH_HEADERS)
 
@@ -24,15 +27,28 @@ from app.core.config import settings
 from app.agents.schemas import ExecutionRequest, ExecutionResponse, ExecutionState, ReActTrace
 
 
-@pytest.fixture(autouse=True)
-def setup_test_memory(tmp_path):
-    temp_dir = tmp_path / "memory_test"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    store = MemoryStore(memory_dir=temp_dir)
-    MemoryManager(store=store)
-    yield store
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
+@pytest_asyncio.fixture(autouse=True)
+async def setup_test_memory():
+    async with AsyncSessionLocal() as session:
+        await session.execute(delete(Memory).where(Memory.user_id == TEST_USER_ID))
+        await session.commit()
+        store = MemoryStore(db=session, user_id=TEST_USER_ID)
+        manager = MemoryManager(store=store)
+        
+        from app.api.v1.endpoints.memory import get_memory_manager
+        from app.api.v1.endpoints.chat import get_chat_service
+        from app.chat.service import ChatService
+        
+        app.dependency_overrides[get_memory_manager] = lambda: manager
+        app.dependency_overrides[get_chat_service] = lambda: ChatService(manager=manager, user_id=str(TEST_USER_ID))
+        
+        yield store
+        
+        app.dependency_overrides.pop(get_memory_manager, None)
+        app.dependency_overrides.pop(get_chat_service, None)
+        await session.execute(delete(Memory).where(Memory.user_id == TEST_USER_ID))
+        await session.commit()
+
 
 @pytest.fixture(autouse=True)
 def reset_metrics_and_limiter():
@@ -49,6 +65,7 @@ def reset_metrics_and_limiter():
     execution_service._active_executors.clear()
     
     rate_limiter.history.clear()
+
 
 def test_structured_logging():
     from app.core.logging import log_structured_event
@@ -74,6 +91,7 @@ def test_structured_logging():
         assert "status=completed" in log_str
         assert "custom_key=custom_val" in log_str
 
+
 def test_metrics_endpoint():
     resp = client.get("/api/v1/metrics")
     assert resp.status_code == 200
@@ -97,6 +115,7 @@ def test_metrics_endpoint():
     assert data["provider_usage"]["gemini"] == 1
     assert data["average_execution_duration_seconds"] == 1.5
 
+
 def test_rate_limiting():
     with patch("app.core.config.settings.RATE_LIMIT_CALLS", 2):
         with patch("app.core.config.settings.RATE_LIMIT_WINDOW_SECONDS", 10):
@@ -117,6 +136,7 @@ def test_rate_limiting():
             
             resp = client.get("/api/v1/health")
             assert resp.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_chat_streaming():
@@ -152,6 +172,7 @@ async def test_chat_streaming():
         assert "event: completed" in lines[8]
         assert "world!" in lines[9]
 
+
 @pytest.mark.asyncio
 async def test_agent_events_and_cancellation(setup_test_memory):
     plan = ExecutionPlan(
@@ -184,12 +205,14 @@ async def test_agent_events_and_cancellation(setup_test_memory):
         
     mock_agent.execute = slow_execute
     
-    with patch("app.agents.registry.AgentRegistry.get_agent", return_value=mock_agent):
+    with patch("app.agents.registry.AgentRegistry.get_agent", return_value=mock_agent), \
+         patch("app.memory.store.generate_embedding", return_value=[0.1] * 768):
         with patch("app.llm.factory.ProviderFactory.get_provider", return_value=MagicMock()):
-            # Run in the same event loop (in-process background task)
+            memory_manager = MemoryManager(store=setup_test_memory)
             exec_task = asyncio.create_task(execution_service.execute_request(
                 request=ExecutionRequest(plan=plan),
-                provider="gemini"
+                provider="gemini",
+                memory_manager=memory_manager
             ))
             
             await asyncio.sleep(0.05)
@@ -198,10 +221,8 @@ async def test_agent_events_and_cancellation(setup_test_memory):
             assert len(active_ids) == 1
             exec_id = active_ids[0]
             
-            # Subscribing in the same event loop is thread-safe and deadlock-proof
             queue = event_publisher.subscribe(exec_id)
             
-            # Check historical events cached
             history = event_publisher.get_history(exec_id)
             assert len(history) >= 4
             assert any(e["type"] == "started" for e in history)
@@ -209,14 +230,12 @@ async def test_agent_events_and_cancellation(setup_test_memory):
             assert any(e["type"] == "tool_call" for e in history)
             assert any(e["type"] == "observation" for e in history)
             
-            # Trigger cancellation directly on the service (in-process call)
             success = execution_service.cancel_execution(exec_id)
             assert success is True
             
             with pytest.raises(asyncio.CancelledError):
                 await exec_task
                 
-            # Verify cancelled event is emitted on the subscriber queue
             queued_events = []
             while not queue.empty():
                 queued_events.append(queue.get_nowait())
@@ -224,24 +243,22 @@ async def test_agent_events_and_cancellation(setup_test_memory):
             assert any(e["type"] == "cancelled" for e in queued_events)
             event_publisher.unsubscribe(exec_id, queue)
             
-            # Verify response is recorded as CANCELLED
             status_resp = execution_service.get_status(exec_id)
             assert status_resp is not None
             assert status_resp.status == "CANCELLED"
             
-            # Verify Memory Engine persistence
-            assert len(setup_test_memory.list(category="execution")) == 1
-            entry = setup_test_memory.list(category="execution")[0]
+            executions = await setup_test_memory.list(category="execution")
+            assert len(executions) == 1
+            entry = executions[0]
             assert entry.metadata["status"] == "CANCELLED"
+
 
 @pytest.mark.asyncio
 async def test_events_endpoint_routing():
-    # 1. Non-existent ID returns 404
     resp = client.get("/api/v1/agents/non-existent-id/events")
     assert resp.status_code == 404
     assert "not found" in resp.json()["error"]["message"]
     
-    # 2. Valid running ID returns 200 text/event-stream (tested in-process to avoid deadlock)
     from app.api.v1.endpoints.agents import get_execution_events
     from app.agents.schemas import ExecutionMetrics
     
@@ -265,21 +282,25 @@ async def test_events_endpoint_routing():
         )
         assert resp.media_type == "text/event-stream"
 
+
 def test_cancel_execution_endpoint():
     with patch("app.agents.service.execution_service.cancel_execution", return_value=True):
         resp = client.post("/api/v1/agents/some-id/cancel")
         assert resp.status_code == 200
         assert "Cancellation request for execution" in resp.json()["message"]
 
+
 def test_cancel_non_existent_or_completed_execution():
     resp = client.post("/api/v1/agents/non-existent-id/cancel")
     assert resp.status_code == 404
     assert "not found or is not running" in resp.json()["error"]["message"]
 
+
 def test_events_non_existent_execution():
     resp = client.get("/api/v1/agents/non-existent-id/events")
     assert resp.status_code == 404
     assert "not found" in resp.json()["error"]["message"]
+
 
 @pytest.mark.asyncio
 async def test_stale_execution_cleanup_and_timeouts():

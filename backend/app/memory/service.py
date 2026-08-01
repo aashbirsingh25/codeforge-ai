@@ -6,24 +6,27 @@ from app.memory.schemas import MemoryEntry
 
 logger = logging.getLogger("app.memory.service")
 
+
 class MemoryService:
     def __init__(self, manager: Optional[MemoryManager] = None):
-        self.manager = manager or MemoryManager()
+        self.manager = manager
 
     async def get_planning_context(self, goal: str) -> str:
         """Retrieves and formats relevant previous memories for planning context."""
+        if not self.manager:
+            return ""
         try:
             # 1. Retrieve similar goals (from category="plan")
-            similar_plans = self.manager.retrieve_similar(query=goal, limit=3, category="plan")
+            similar_plans = await self.manager.retrieve_similar(query=goal, limit=3, category="plan")
             
             # 2. Retrieve recent executions (category="execution")
-            recent_executions = self.manager.retrieve_recent(limit=3, category="execution")
+            recent_executions = await self.manager.retrieve_recent(limit=3, category="execution")
             
             # 3. Retrieve recent failures (using tag "failure")
-            recent_failures = self.manager.retrieve_by_tag(tag="failure", limit=3)
+            recent_failures = await self.manager.retrieve_by_tag(tag="failure", limit=3)
             
             # 4. Retrieve tool outputs (category="tool_output")
-            recent_tool_outputs = self.manager.retrieve_recent(limit=3, category="tool_output")
+            recent_tool_outputs = await self.manager.retrieve_recent(limit=3, category="tool_output")
             
             context_blocks = []
             
@@ -63,6 +66,7 @@ class MemoryService:
             logger.error(f"Error generating planning context: {str(e)}")
             # Do not block planning due to memory failure
             return ""
+
 
 # Global memory service instance
 memory_service = MemoryService()

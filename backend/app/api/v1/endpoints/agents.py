@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 import json
 import asyncio
 
@@ -8,6 +9,11 @@ from app.agents.schemas import ExecutionRequest, ExecutionResponse, ReActTrace
 from app.agents.service import execution_service, AgentExecutionService
 from app.planner.schemas import ExecutionPlan
 from app.core.exceptions import CodeForgeException
+from app.core.auth import get_current_user
+from app.db.base import get_db_session
+from app.db.models import User
+from app.memory.store import MemoryStore
+from app.memory.manager import MemoryManager
 
 router = APIRouter()
 
@@ -55,33 +61,38 @@ def list_agents():
 @router.post("/execute", response_model=ExecutionResponse, status_code=status.HTTP_201_CREATED)
 async def execute_goal_or_plan(
     request: ExecutionRequest,
-    service: AgentExecutionService = Depends(get_execution_service)
+    service: AgentExecutionService = Depends(get_execution_service),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
 ):
     """
     Executes a high-level goal (by automatically planning first) or executes an existing plan.
     """
     try:
-        return await service.execute_request(request)
+        memory_manager = MemoryManager(store=MemoryStore(db=db, user_id=current_user.id))
+        return await service.execute_request(request, memory_manager=memory_manager)
     except CodeForgeException:
         raise
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        # CodeForgeException will be handled by the centralized handler, but here we catch general errors
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.post("/execute/plan", response_model=ExecutionResponse, status_code=status.HTTP_201_CREATED)
 async def execute_existing_plan(
     plan: ExecutionPlan,
-    service: AgentExecutionService = Depends(get_execution_service)
+    service: AgentExecutionService = Depends(get_execution_service),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
 ):
     """
     Executes an existing structured execution plan.
     """
     try:
         request = ExecutionRequest(plan=plan)
-        return await service.execute_request(request)
+        memory_manager = MemoryManager(store=MemoryStore(db=db, user_id=current_user.id))
+        return await service.execute_request(request, memory_manager=memory_manager)
     except CodeForgeException:
         raise
     except ValueError as e:
@@ -135,6 +146,7 @@ def get_execution_trace(
         )
     return response.react_trace
 
+
 @router.get("/{execution_id}/events", summary="Get execution tracing events", description="Returns a Server-Sent Events stream delivering agent ReAct reasoning steps, thoughts, tool calls, and observations.")
 async def get_execution_events(
     execution_id: str,
@@ -168,6 +180,7 @@ async def get_execution_events(
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")
 
+
 @router.post("/{execution_id}/cancel", status_code=status.HTTP_200_OK, summary="Cancel a running execution", description="Commands a graceful cancellation request for the active agent execution asyncio task, finalizing metrics states.")
 def cancel_execution(
     execution_id: str,
@@ -180,4 +193,3 @@ def cancel_execution(
             detail=f"Execution with ID '{execution_id}' not found or is not running."
         )
     return {"message": f"Cancellation request for execution '{execution_id}' submitted."}
-

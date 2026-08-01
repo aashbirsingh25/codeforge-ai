@@ -9,9 +9,11 @@ from app.agents.schemas import ExecutionRequest, ExecutionResponse, ExecutionSta
 from app.agents.executor import AgentExecutor
 from app.planner.service import PlannerService
 from app.planner.schemas import PlanningRequest
+from app.memory.manager import MemoryManager
 from app.core.config import settings
 
 logger = logging.getLogger("app.agents.service")
+
 
 class AgentExecutionService:
     def __init__(self):
@@ -22,7 +24,13 @@ class AgentExecutionService:
         # Track active executors for cancel adjustments
         self._active_executors: Dict[str, AgentExecutor] = {}
 
-    async def execute_request(self, request: ExecutionRequest, provider: str = "gemini", max_retries: int = 3) -> ExecutionResponse:
+    async def execute_request(
+        self,
+        request: ExecutionRequest,
+        provider: str = "gemini",
+        max_retries: int = 3,
+        memory_manager: Optional[MemoryManager] = None
+    ) -> ExecutionResponse:
         execution_id = str(uuid.uuid4())
         
         # 1. Resolve Plan
@@ -44,8 +52,14 @@ class AgentExecutionService:
             planning_resp = await planner_service.generate_plan(planning_req)
             plan = planning_resp.plan
         
-        # 2. Run executor
-        executor = AgentExecutor(plan, provider=provider, max_retries=max_retries, execution_id=execution_id)
+        # 2. Run executor with memory manager
+        executor = AgentExecutor(
+            plan,
+            provider=provider,
+            max_retries=max_retries,
+            execution_id=execution_id,
+            memory_manager=memory_manager
+        )
         
         # Record start times
         start_time_iso = executor.state_mgr.state.timestamps["start_time"]
@@ -118,18 +132,18 @@ class AgentExecutionService:
             self._executions[execution_id] = response
             
             # Save cancellation state to Memory Engine
-            try:
-                from app.memory.manager import MemoryManager
-                MemoryManager().save_execution(
-                    execution_id=execution_id,
-                    goal=plan.goal,
-                    status="CANCELLED",
-                    tasks=plan.tasks,
-                    duration=duration,
-                    error="Execution cancelled by user."
-                )
-            except Exception as e_mem:
-                logger.warning(f"Failed to log cancelled execution to memory: {e_mem}")
+            if memory_manager:
+                try:
+                    await memory_manager.save_execution(
+                        execution_id=execution_id,
+                        goal=plan.goal,
+                        status="CANCELLED",
+                        tasks=plan.tasks,
+                        duration=duration,
+                        error="Execution cancelled by user."
+                    )
+                except Exception as e_mem:
+                    logger.warning(f"Failed to log cancelled execution to memory: {e_mem}")
                 
             # Publish SSE cancellation event
             try:
@@ -217,6 +231,7 @@ class AgentExecutionService:
                     
         for exec_id in to_remove:
             del self._executions[exec_id]
+
 
 # Global singleton instance
 execution_service = AgentExecutionService()
