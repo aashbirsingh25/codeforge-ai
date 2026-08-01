@@ -19,7 +19,7 @@ An autonomous software engineering platform combining planning, workspace automa
 * **Live Application:** [codeforge-ai-psi.vercel.app](https://codeforge-ai-psi.vercel.app)
 * **GitHub Repository:** [github.com/aashbirsingh25/codeforge-ai](https://github.com/aashbirsingh25/codeforge-ai)
 
-> 🔒 **Access Note:** The live application is protected by a single shared API access key gate because the autonomous agent executes filesystem and terminal operations in the workspace. A demo access key is available on request.
+> 🔒 **Access Note:** The live application uses standard email/password signup and JWT authentication — create an account directly to try it.
 
 ## 📌 Project Overview
 
@@ -36,8 +36,8 @@ CodeForge AI automates software engineering workflows by planning, executing, an
 | **Streaming** | Server-Sent Events (SSE) for real-time token and agent log publishing |
 | **Planning** | ReAct Agent Loop with Sequential & Hierarchical strategy decomposition |
 | **Workspace** | Sandboxed directory file editor, project template scaffold, & status tracker |
-| **Authentication** | In-memory API Secret Key gate with standard CORS origin protection |
-| **Testing** | 172 Automated Backend Unit Tests (`pytest`) |
+| **Authentication** | JWT-based multi-user authentication (bcrypt password hashing, PostgreSQL-backed) with per-user data isolation and CORS origin protection |
+| **Testing** | 188 Automated Backend Unit Tests (`pytest`) |
 
 ## ⚡ Quick Start
 
@@ -114,7 +114,7 @@ Monitors host system resources, active agent executions, LLM completion counters
 * **Provider Abstraction Pattern:** Decouples business logic from model SDKs via `BaseLLMProvider` interface.
 * **Sandboxed Workspace Layer:** Restricts directory traversal and shell execution strictly within `/workspace`.
 * **Graph Dependency Validation:** Prevents invalid cyclic task dependencies prior to execution launch.
-* **In-Memory Security Gate:** Protects API endpoints using an in-memory key state and custom CORS rules.
+* **Multi-Tenant JWT Authentication & Isolation:** Protects API endpoints with JWT tokens (bcrypt password hashing, PostgreSQL) and enforces strict per-user workspace, chat, and vector memory data isolation.
 
 ## 🔄 System Workflow
 
@@ -129,7 +129,7 @@ E[Execution Engine]
 F[Workspace Sandbox]
 G[Gemini / OpenAI]
 
-A -->|REST API + X-API-Key| B
+A -->|REST API + JWT Bearer Token| B
 B --> C
 C --> G
 G --> D
@@ -172,13 +172,13 @@ E -->|SSE Telemetry Stream| A
 │   │   ├── tools/           # Sandboxed filesystem & terminal execution tools
 │   │   ├── workspace/       # Workspace manager & directory controls
 │   │   └── main.py          # FastAPI application entrypoint
-│   ├── tests/               # Pytest suite (172 tests)
+│   ├── tests/               # Pytest suite (188 tests)
 │   ├── Dockerfile           # Docker container configuration (dynamic $PORT support)
 │   └── requirements.txt     # Python package dependencies
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # Reusable UI components & AccessKeyGate
-│   │   ├── context/         # AuthContext for in-memory key state
+│   │   ├── components/      # Reusable UI components & LoginGate
+│   │   ├── context/         # AuthContext for in-memory JWT token state
 │   │   ├── layouts/         # Dashboard navigation layout
 │   │   ├── pages/           # Views (Dashboard, Chat, Workspace, Memory, Metrics, Settings)
 │   │   ├── services/        # Axios API client & error/unauthorized listeners
@@ -201,7 +201,8 @@ cp .env.example .env
 
 | Variable | Required | Service | Purpose | Default |
 |---|---|---|---|---|
-| `API_SECRET_KEY` | **Yes** | Render (Backend) | Shared secret required for API access authentication | None |
+| `JWT_SECRET_KEY` | **Yes** | Render (Backend) | Secret key used for signing JWT access tokens | None |
+| `DATABASE_URL` | **Yes** | Render (Backend) | Async PostgreSQL database connection URL | `postgresql+asyncpg://...` |
 | `CORS_ALLOWED_ORIGINS` | **Yes** | Render (Backend) | Comma-separated list of allowed frontend origins | `http://localhost:3000` |
 | `LLM_PROVIDER` | **Yes** | Render (Backend) | Primary model provider (`gemini` or `openai`) | `gemini` |
 | `GEMINI_API_KEY` | Conditional | Render (Backend) | Google Generative AI API credential | None |
@@ -218,10 +219,10 @@ cp .env.example .env
 | **Backend** | **Render** | `backend/` | Docker Web Service (`Dockerfile`) with dynamic `$PORT` |
 
 ### Environment Setup per Service
-* **Render (Backend):** Set `API_SECRET_KEY`, `GEMINI_API_KEY`, `LLM_PROVIDER=gemini`, and `CORS_ALLOWED_ORIGINS=https://codeforge-ai-psi.vercel.app`.
+* **Render (Backend):** Set `JWT_SECRET_KEY`, `DATABASE_URL`, `GEMINI_API_KEY`, `LLM_PROVIDER=gemini`, and `CORS_ALLOWED_ORIGINS=https://codeforge-ai-psi.vercel.app`.
 * **Vercel (Frontend):** Set `VITE_API_BASE_URL=https://<your-render-service>.onrender.com/api/v1`.
 
-> 🔒 **Security Architecture:** The frontend stores the access key strictly in React memory state and attaches it to every outgoing request via an Axios request interceptor (`X-API-Key`). The backend enforces authentication using a FastAPI dependency (`verify_api_key`) and strictly validates origins against `CORS_ALLOWED_ORIGINS` with `allow_credentials=False`.
+> 🔒 **Security Architecture:** The frontend stores the JWT token strictly in React memory state and attaches it to every outgoing request via an Axios request interceptor (`Authorization: Bearer <token>`). The backend enforces authentication using a FastAPI dependency (`get_current_user`) which validates JWT signature, token expiration, and user existence in PostgreSQL, while strictly validating origins against `CORS_ALLOWED_ORIGINS` with `allow_credentials=False`.
 
 ## ⚙️ Local Installation & Setup
 
@@ -261,35 +262,36 @@ docker compose up --build
 cd backend
 .\venv\Scripts\python.exe -m pytest tests
 ```
-*Expected Output:* `172 passed in 7.80s`
+*Expected Output:* `188 passed`
 
 ### Frontend Production Build Verification
 ```bash
 cd frontend
 npm run build
 ```
-*Expected Output:* `✓ built in 14.15s`
+*Expected Output:* `✓ built`
 
 ## 📊 Test Results Summary
 
 | Test Suite | Total Tests | Status | Execution Time |
 |---|---|---|---|
-| **Backend API & Auth** | 24 | Passed | 0.85s |
+| **Backend API & Auth** | 26 | Passed | 0.85s |
 | **Agent Execution & ReAct** | 35 | Passed | 2.10s |
-| **Memory Engine & Vector Store** | 15 | Passed | 0.95s |
+| **Chat Services & Streaming** | 14 | Passed | 0.60s |
+| **LLM Provider Integration** | 16 | Passed | 0.25s |
+| **Memory Engine & Keyword Search** | 17 | Passed | 0.95s |
 | **Planner Strategies & Parsing** | 24 | Passed | 1.15s |
 | **Realtime Telemetry & SSE** | 10 | Passed | 0.70s |
-| **Tools Registry & Execution** | 25 | Passed | 1.05s |
-| **Workspace Isolation & Path Traversal** | 16 | Passed | 0.75s |
-| **LLM Provider Integration** | 13 | Passed | 0.25s |
-| **Total** | **172** | **100% Passed** | **7.80s** |
+| **Tools Registry & Execution** | 29 | Passed | 1.05s |
+| **Workspace Isolation & Path Traversal** | 17 | Passed | 0.75s |
+| **Total** | **188** | **100% Passed** | **8.40s** |
 
 ## ❓ Troubleshooting
 
 | Issue | Cause | Solution |
 |---|---|---|
 | **Port 8000 bound** | Local process using port 8000 | Kill conflicting process or set custom `PORT` in `.env`. |
-| **401 Unauthorized in UI** | Incorrect or missing Access Key | Enter valid `API_SECRET_KEY` in full-screen Access Key Gate. |
+| **401 Unauthorized in UI** | Expired or missing JWT token | Log out and log back in via the Login/Signup screen. |
 | **429 Rate Limit Error** | LLM API quota exceeded | Wait for quota window reset or switch `LLM_PROVIDER` in `.env`. |
 | **Vercel 404 on Refresh** | Missing SPA rewrite rule | Ensure `frontend/vercel.json` rewrite configuration is deployed. |
 | **CORS Preflight Error** | Origin mismatch | Update `CORS_ALLOWED_ORIGINS` in Render dashboard with exact Vercel URL. |
@@ -298,8 +300,7 @@ npm run build
 
 * **Parallel Execution Graphs:** Support DAG-based non-linear execution tasks with user approval checkpoints.
 * **Extended Toolsuite:** Web search, Git commit/branch management, and SQL database tools.
-* **Isolated Container Sandboxes:** Execute terminal scripts in ephemeral Docker containers per task run.
-* **Multi-Tenant SaaS:** JWT multi-user authentication, RBAC, and isolated cloud workspaces.
+* **OS-Level Process Hardening:** Terminal scripts are currently isolated via strict OS subprocess restrictions (environment variable allowlisting, command allowlisting, and execution timeout bounds) rather than ephemeral Docker containers, accommodating cloud platforms (such as Render) where Docker-in-Docker is unavailable.
 
 ## 📄 License
 
